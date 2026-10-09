@@ -11,8 +11,6 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score, classification_report
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
-import mlflow
-import mlflow.sklearn
 
 # Setup path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -45,23 +43,17 @@ def main():
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    mlflow.set_experiment("sentiment-analysis")
-
     pipe = Pipeline([
         ("tfidf", TfidfVectorizer(ngram_range=(1, 2), max_features=50000)),
         ("clf", LogisticRegression(max_iter=1000))
     ])
 
-    with mlflow.start_run():
-        pipe.fit(X_train, y_train)
-        y_pred = pipe.predict(X_test)
-        acc = accuracy_score(y_test, y_pred)
-        
-        os.makedirs(os.path.dirname(args.model_out), exist_ok=True)
-        joblib.dump(pipe, args.model_out)
-        
-        mlflow.log_metrics({"accuracy": acc})
-        mlflow.sklearn.log_model(pipe, "model")
+    pipe.fit(X_train, y_train)
+    y_pred = pipe.predict(X_test)
+    acc = accuracy_score(y_test, y_pred)
+
+    os.makedirs(os.path.dirname(args.model_out), exist_ok=True)
+    joblib.dump(pipe, args.model_out)
 
     logger.info(f"Training completed. Accuracy: {acc:.4f}")
 

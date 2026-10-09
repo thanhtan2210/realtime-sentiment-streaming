@@ -1,13 +1,12 @@
 PYTHON := python
 
-.PHONY: help train producer processor api dashboard compose-up
+.PHONY: help train producer processor dashboard compose-up
 
 help:
 	@echo "Available targets:"
 	@echo "  make train       - Train model"
 	@echo "  make producer    - Run Kafka producer"
 	@echo "  make processor   - Run Spark processor"
-	@echo "  make api         - Run FastAPI"
 	@echo "  make dashboard   - Run Streamlit"
 	@echo "  make compose-up  - Start infra via docker-compose"
 
@@ -19,9 +18,6 @@ producer:
 
 processor:
 	$(PYTHON) src/processing/processor.py
-
-api:
-	uvicorn src.api.main:app --reload --port 8000
 
 dashboard:
 	streamlit run src/dashboard/app.py

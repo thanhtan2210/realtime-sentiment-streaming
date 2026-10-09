@@ -25,37 +25,23 @@ The core logic resides in an Apache Spark Streaming application.
 - **Optimization (Vectorized Inference)**: Traditional Spark UDFs suffer from significant overhead due to row-by-row serialization between the JVM and Python. This project utilizes **Pandas UDFs (Vectorized UDFs)** which use **Apache Arrow** for zero-copy data transfer. This allows the model to process data in batches (vectors), utilizing NumPy-level speeds.
 - **State Management**: Implements Spark Checkpointing to ensure the pipeline can recover its state and offset position in the event of a system failure.
 
-### 3. Storage and Serving Layer (src/api)
+### 3. Storage Layer
 - **Database**: MongoDB serves as the sink for the analytical results, providing a flexible schema for unstructured social media data and supporting rapid aggregation queries.
-- **API**: A FastAPI-based REST service exposes the processed data. It provides endpoints for retrieving live insights, historical statistics, and individual model predictions.
 
 ### 4. Visualization Layer (src/dashboard)
 - **Live Monitoring**: A Streamlit dashboard provides a real-time view of the data flowing through the system.
 - **Insights**: Visualizes sentiment distribution, geographical activity trends, and platform-specific engagement metrics.
 
-### 5. MLOps and Lineage (src/ml)
-- **Experiment Tracking**: Integrated with MLflow to log training parameters, metrics, and serialized model artifacts.
+### 5. Model (src/ml)
 - **Model Pipeline**: Uses a scikit-learn pipeline (TF-IDF + Logistic Regression) trained on a rich dataset featuring over 30 emotional categories.
-
-## Performance Benchmarking
-
-The primary technical achievement of this project is the optimization of the inference engine. By migrating from Scalar UDFs to Vectorized Pandas UDFs, the system achieves near-production throughput on commodity hardware.
-
-### Benchmark Results (5,000 Records)
-- **Scalar UDF (Row-by-Row)**: ~70.13 seconds (~71 records/sec)
-- **Pandas UDF (Vectorized)**: ~0.15 seconds (~33,300 records/sec)
-- **Performance Gain**: 478x faster
-
-This optimization allows the system to scale to millions of messages per day without requiring a massive hardware footprint.
 
 ## Project Structure
 
 - src/common: Shared utilities, centralized configuration, and structured logging.
 - src/ingestion: Data ingestion logic and Pydantic schema definitions.
 - src/processing: Spark Streaming jobs and vectorized inference logic.
-- src/api: FastAPI application and endpoint definitions.
 - src/dashboard: Streamlit visualization application.
-- src/ml: Model training, evaluation scripts, and MLflow integration.
+- src/ml: Model training and evaluation scripts.
 - data: Raw datasets and CSV storage.
 - models: Serialized model artifacts and performance metrics.
 - checkpoints: Spark Streaming recovery metadata.
@@ -82,7 +68,7 @@ docker-compose up -d
 ```
 
 ### 3. Model Training
-Train the initial model and register it with MLflow:
+Train the model:
 ```bash
 make train
 ```
@@ -103,18 +89,6 @@ To run the full end-to-end pipeline, execute these commands in separate terminal
    ```bash
    make dashboard
    ```
-4. **API**: Start the backend service for external access.
-   ```bash
-   make api
-   ```
-
-## API Documentation
-
-The following REST endpoints are available (default port 8000):
-- GET /: Service status and health check.
-- GET /latest?limit=N: Retrieve the N most recent sentiment records.
-- GET /stats: Retrieve aggregated sentiment counts across the entire dataset.
-- POST /predict?text=...: Perform real-time inference on a single custom string.
 
 ## Production Considerations
 
