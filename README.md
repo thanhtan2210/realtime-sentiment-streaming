@@ -33,16 +33,24 @@ The core logic resides in an Apache Spark Streaming application.
 - **Insights**: Visualizes sentiment distribution, geographical activity trends, and platform-specific engagement metrics.
 
 ### 5. Model (src/ml)
-- **Model Pipeline**: Uses a scikit-learn pipeline (TF-IDF + Logistic Regression) trained on a rich dataset featuring over 30 emotional categories.
+- **Model Pipeline**: Uses a scikit-learn pipeline (TF-IDF + Logistic Regression) that classifies a tweet as negative, neutral or positive.
+
+## Dataset
+
+[Twitter US Airline Sentiment](https://www.kaggle.com/datasets/crowdflower/twitter-airline-sentiment): tweets sent to major US airlines in February 2015, each labelled negative, neutral or positive by Crowdflower (Figure Eight) contributors and published in their "Data for Everyone" library.
+
+- **File**: `data/raw/Tweets.csv`, downloaded by `scripts/fetch_data.py` from a public Hugging Face mirror of the Kaggle dataset (no login needed). The exact URL, download date, row count and sha256 are in [data/raw/SOURCE.md](data/raw/SOURCE.md).
+- **License**: [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) (non-commercial, share-alike). The copy in this repo is redistributed under the same license.
 
 ## Project Structure
 
 - src/common: Shared utilities, centralized configuration, and structured logging.
+- scripts: Data download script.
 - src/ingestion: Data ingestion logic and Pydantic schema definitions.
 - src/processing: Spark Streaming jobs and vectorized inference logic.
 - src/dashboard: Streamlit visualization application.
 - src/ml: Model training and evaluation scripts.
-- data: Raw datasets and CSV storage.
+- data/raw: Raw dataset and its source record.
 - models: Serialized model artifacts and performance metrics.
 - checkpoints: Spark Streaming recovery metadata.
 
