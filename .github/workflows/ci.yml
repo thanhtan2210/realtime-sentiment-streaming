@@ -15,5 +15,10 @@ jobs:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: requirements*.txt
+      # Tests marked `spark` start a local Spark session and need a JVM.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
       - run: pip install -r requirements-dev.txt
       - run: pytest -q

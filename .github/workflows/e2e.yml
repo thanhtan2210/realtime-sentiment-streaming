@@ -1,0 +1,40 @@
+name: E2E
+
+# Builds both images, starts Kafka, MongoDB and the Spark processor, replays
+# 500 test tweets and checks that they arrive in MongoDB.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build images
+        run: docker compose --profile replay build
+
+      # depends_on in docker-compose.yml holds the processor back until Kafka
+      # and MongoDB are healthy and the topic exists.
+      - name: Start Kafka, MongoDB and the processor
+        run: docker compose up -d kafka mongodb processor
+
+      - name: Replay 500 test tweets
+        run: docker compose run --rm producer --max-rate --limit 500
+
+      - name: Check MongoDB (exactly 500 predictions, at least 1 airline window, within 5 minutes)
+        run: bash scripts/check_e2e.sh 500 300
+
+      - name: Service logs
+        if: failure()
+        run: |
+          docker compose ps -a
+          docker compose logs --no-color
+
+      - name: Tear down
+        if: always()
+        run: docker compose --profile replay down -v
