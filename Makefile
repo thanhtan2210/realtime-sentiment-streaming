@@ -14,13 +14,13 @@ train:
 	$(PYTHON) -m src.ml.train
 
 producer:
-	$(PYTHON) src/ingestion/producer.py
+	$(PYTHON) -m src.ingestion.producer
 
 processor:
-	$(PYTHON) src/processing/processor.py
+	$(PYTHON) -m src.processing.processor
 
 dashboard:
-	streamlit run src/dashboard/app.py
+	$(PYTHON) -m streamlit run src/dashboard/app.py
 
 compose-up:
 	docker-compose up --build

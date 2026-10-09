@@ -1,14 +1,11 @@
 import json
 import time
 import pandas as pd
-import sys
 import os
 from kafka import KafkaProducer
 from pydantic import BaseModel, Field, ValidationError
 from typing import Optional
 
-# Setup path for imports
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from src.common import config, logger as common_logger
 
 logger = common_logger.get_logger(__name__)

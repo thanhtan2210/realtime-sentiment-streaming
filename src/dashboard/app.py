@@ -2,12 +2,8 @@ import streamlit as st
 import pandas as pd
 from pymongo import MongoClient
 import time
-import os
-import sys
 import plotly.express as px
 
-# Setup path for imports
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from src.common import config
 
 st.set_page_config(page_title="Real-time Sentiment Monitor", layout="wide")

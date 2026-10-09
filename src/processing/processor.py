@@ -1,13 +1,10 @@
 import os
 import joblib
 import pandas as pd
-import sys
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import from_json, col, pandas_udf
 from pyspark.sql.types import StructType, StructField, StringType
 
-# Setup path for imports
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from src.common import config, logger as common_logger
 
 logger = common_logger.get_logger(__name__)
