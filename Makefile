@@ -11,7 +11,7 @@ help:
 	@echo "  make compose-up  - Start infra via docker-compose"
 
 train:
-	$(PYTHON) src/ml/train.py
+	$(PYTHON) -m src.ml.train
 
 producer:
 	$(PYTHON) src/ingestion/producer.py

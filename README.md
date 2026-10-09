@@ -34,6 +34,7 @@ The core logic resides in an Apache Spark Streaming application.
 
 ### 5. Model (src/ml)
 - **Model Pipeline**: Uses a scikit-learn pipeline (TF-IDF + Logistic Regression) that classifies a tweet as negative, neutral or positive.
+- **Evaluation**: `python -m src.ml.train` drops duplicate tweets, trains on the earlier days and tests on the later days (cut-off in `config/pipeline.yaml`), picks hyper-parameters with time-ordered cross-validation on the training days only, and scores the test days once against a majority-class baseline. All results are written to `models/metrics.json`.
 
 ## Dataset
 
@@ -49,7 +50,8 @@ The core logic resides in an Apache Spark Streaming application.
 - src/ingestion: Data ingestion logic and Pydantic schema definitions.
 - src/processing: Spark Streaming jobs and vectorized inference logic.
 - src/dashboard: Streamlit visualization application.
-- src/ml: Model training and evaluation scripts.
+- config: Train/test cut-off and hyper-parameter grid.
+- src/ml: Data preparation, model training and evaluation.
 - data/raw: Raw dataset and its source record.
 - models: Serialized model artifacts and performance metrics.
 - checkpoints: Spark Streaming recovery metadata.

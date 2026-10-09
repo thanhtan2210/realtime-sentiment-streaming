@@ -1,0 +1,22 @@
+# Settings for src.ml.data and src.ml.train.
+
+split:
+  # Tweets created at or after this instant are the test set; everything
+  # before it is the training set. All timestamps in the raw file are -08:00.
+  # Chosen from the tweets-per-day counts only (the last two days hold about
+  # 29% of the de-duplicated tweets), not from any model score.
+  test_start: "2015-02-23T00:00:00-08:00"
+
+cv:
+  # TimeSeriesSplit over the time-ordered training set; selection metric is macro-F1.
+  n_splits: 5
+  grid:
+    tfidf__ngram_range: [[1, 1], [1, 2]]
+    tfidf__min_df: [2]
+    clf__C: [0.1, 1.0, 10.0]
+    clf__class_weight: [null, balanced]
+
+bootstrap:
+  n_resamples: 1000
+
+seed: 42
