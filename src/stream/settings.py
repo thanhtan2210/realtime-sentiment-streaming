@@ -6,6 +6,14 @@ import os
 ENV_OVERRIDES = {
     "KAFKA_BOOTSTRAP_SERVERS": ("kafka", "bootstrap_servers"),
     "KAFKA_TOPIC": ("kafka", "topic"),
+    "MONGODB_URI": ("mongodb", "uri"),
+    "MONGODB_DATABASE": ("mongodb", "database"),
+    "STREAM_WINDOW": ("window",),
+    "STREAM_WATERMARK": ("watermark",),
+    "STREAM_TRIGGER": ("trigger",),
+    "STREAM_CHECKPOINT_DIR": ("checkpoint_dir",),
+    "SPARK_MASTER": ("spark", "master"),
+    "SPARK_DRIVER_MEMORY": ("spark", "driver_memory"),
 }
 
 

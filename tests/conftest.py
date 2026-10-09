@@ -1,3 +1,7 @@
+import os
+import shutil
+import sys
+
 import pandas as pd
 import pytest
 
@@ -62,3 +66,30 @@ def cfg():
         "bootstrap": {"n_resamples": 50},
         "seed": 42,
     }
+
+
+@pytest.fixture(scope="session")
+def spark():
+    """A local Spark session for tests marked `spark`; skipped when Java is missing."""
+    if not (shutil.which("java") or os.environ.get("JAVA_HOME")):
+        pytest.skip("no Java runtime found")
+    from pyspark.sql import SparkSession
+
+    # Python workers must be this interpreter and must be able to import `src`.
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    os.environ["PYSPARK_PYTHON"] = sys.executable
+    os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
+    os.environ["PYTHONPATH"] = os.pathsep.join(
+        filter(None, [repo_root, os.environ.get("PYTHONPATH")])
+    )
+    session = (
+        SparkSession.builder.master("local[1]")
+        .appName("tests")
+        .config("spark.sql.session.timeZone", "UTC")
+        .config("spark.sql.shuffle.partitions", "1")
+        .config("spark.ui.enabled", "false")
+        .config("spark.driver.bindAddress", "127.0.0.1")
+        .getOrCreate()
+    )
+    yield session
+    session.stop()

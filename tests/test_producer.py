@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 from pydantic import ValidationError
 
-from src.ml.data import prepare
+from src.ml.data import load_config, prepare
 from src.stream.producer import (
     TweetMessage,
     build_message,
@@ -134,3 +134,26 @@ def test_environment_overrides_stream_settings():
     overridden = stream_settings(cfg, env={"KAFKA_BOOTSTRAP_SERVERS": "kafka:9092"})
     assert overridden["kafka"] == {"bootstrap_servers": "kafka:9092", "topic": "tweets"}
     assert cfg["stream"]["kafka"]["bootstrap_servers"] == "localhost:29092"
+
+
+def test_stream_settings_cover_every_configurable_value():
+    settings = stream_settings(
+        load_config(),
+        env={
+            "KAFKA_BOOTSTRAP_SERVERS": "kafka:9092",
+            "MONGODB_URI": "mongodb://mongodb:27017",
+            "STREAM_TRIGGER": "1 second",
+            "SPARK_MASTER": "local[4]",
+        },
+    )
+    assert settings["kafka"] == {"bootstrap_servers": "kafka:9092", "topic": "tweets"}
+    assert settings["mongodb"]["uri"] == "mongodb://mongodb:27017"
+    assert settings["mongodb"]["predictions_collection"] == "predictions"
+    assert settings["mongodb"]["windows_collection"] == "airline_windows"
+    assert (settings["window"], settings["watermark"], settings["trigger"]) == (
+        "1 hour",
+        "30 minutes",
+        "1 second",
+    )
+    assert settings["spark"]["master"] == "local[4]"
+    assert settings["spark"]["driver_memory"] == "1g"

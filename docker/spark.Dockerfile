@@ -38,7 +38,7 @@ RUN python /tmp/fetch_spark_jars.py \
 # The processor runs Spark in local mode, so the driver only talks to itself.
 # Without this, a container whose hostname does not resolve (for example
 # `docker run --network none`) cannot start a session.
-ENV SPARK_LOCAL_IP=127.0.0.1     SPARK_LOCAL_HOSTNAME=localhost
+ENV SPARK_LOCAL_IP=127.0.0.1     SPARK_LOCAL_HOSTNAME=localhost     PYTHONPATH=/app
 
 COPY src/ src/
 COPY config/ config/

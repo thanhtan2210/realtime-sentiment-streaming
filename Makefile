@@ -1,26 +1,26 @@
 PYTHON := python
 
-.PHONY: help train producer processor dashboard compose-up
+.PHONY: help train test up replay down
 
 help:
 	@echo "Available targets:"
-	@echo "  make train       - Train model"
-	@echo "  make producer    - Replay the test tweets into Kafka (stack must be up)"
-	@echo "  make processor   - Run Spark processor"
-	@echo "  make dashboard   - Run Streamlit"
-	@echo "  make compose-up  - Start infra via docker-compose"
+	@echo "  make train    - Train the model and write models/metrics.json"
+	@echo "  make test     - Run the tests"
+	@echo "  make up       - Build and start Kafka, MongoDB and the Spark processor"
+	@echo "  make replay   - Replay the test tweets into Kafka (stack must be up)"
+	@echo "  make down     - Stop the stack and delete its data"
 
 train:
 	$(PYTHON) -m src.ml.train
 
-producer:
-	docker compose run --rm producer
+test:
+	$(PYTHON) -m pytest -q
 
-processor:
-	$(PYTHON) -m src.processing.processor
+up:
+	docker compose up -d --build
 
-dashboard:
-	$(PYTHON) -m streamlit run src/dashboard/app.py
+replay:
+	docker compose run --rm producer --speedup 600
 
-compose-up:
-	docker-compose up --build
+down:
+	docker compose down -v
