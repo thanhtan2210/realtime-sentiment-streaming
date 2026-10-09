@@ -4,6 +4,7 @@
     "rows_with_valid_label_and_text": 14640,
     "duplicate_text_rows_removed": 216,
     "duplicated_texts_with_conflicting_labels": 26,
+    "duplicate_tweet_id_rows_removed": 0,
     "rows": 14424
   },
   "split": {

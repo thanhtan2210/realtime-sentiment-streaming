@@ -18,9 +18,10 @@ def load_raw(path: str = config.CSV_DATA_PATH) -> pd.DataFrame:
 
 
 def clean(raw: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
-    """Keep the modelling columns, order by time and drop duplicate texts.
+    """Keep the modelling columns, order by time and drop duplicates.
 
-    Texts are compared after collapsing whitespace; the earliest copy is kept.
+    Duplicate texts (compared after collapsing whitespace) go first, then any
+    remaining duplicate tweet_id; the earliest copy is kept each time.
     This runs on the full dataset, before any train/test split.
     """
     df = pd.DataFrame(
@@ -39,13 +40,16 @@ def clean(raw: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
 
     df = df.sort_values(["created_at", "tweet_id"], kind="stable")
     labels_per_text = df.groupby("text")["label"].nunique()
-    deduped = df.drop_duplicates(subset="text", keep="first").reset_index(drop=True)
+    by_text = df.drop_duplicates(subset="text", keep="first")
+    # tweet_id becomes the document key downstream, so it must be unique too.
+    deduped = by_text.drop_duplicates(subset="tweet_id", keep="first").reset_index(drop=True)
 
     stats = {
         "raw_rows": int(len(raw)),
         "rows_with_valid_label_and_text": int(rows_with_valid_label),
-        "duplicate_text_rows_removed": int(rows_with_valid_label - len(deduped)),
+        "duplicate_text_rows_removed": int(rows_with_valid_label - len(by_text)),
         "duplicated_texts_with_conflicting_labels": int((labels_per_text > 1).sum()),
+        "duplicate_tweet_id_rows_removed": int(len(by_text) - len(deduped)),
         "rows": int(len(deduped)),
     }
     return deduped[COLUMNS], stats

@@ -18,4 +18,14 @@ The download URL is a public Hugging Face mirror of the Kaggle dataset
 The license is the one stated on the Kaggle dataset page and repeated on
 the mirror's dataset card. It is non-commercial and share-alike.
 
+## What the license covers
+
+`Tweets.csv`, and anything produced from it that contains tweet text, is under
+CC BY-NC-SA 4.0: exports or snapshots of the stream (predictions stored with
+their `text`), samples, and screenshots that show tweets.
+`models/sentiment_pipeline.joblib` stores a vocabulary of words and word pairs
+taken from the tweets, so treat it the same way.
+
+The code in this repository is under the MIT license (see `LICENSE`).
+
 Written by `scripts/fetch_data.py`. Do not edit by hand.

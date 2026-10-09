@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 
 from src.ml.data import COLUMNS, LABELS, clean, prepare, time_split
-from tests.conftest import TEST_START
+from tests.conftest import TEST_START, _row
 
 
 def test_clean_keeps_only_modelling_columns_and_three_labels(raw):
@@ -31,6 +31,27 @@ def test_duplicate_texts_are_dropped_before_the_split(raw, cfg):
     assert (train["text"] == "my bag is lost again").sum() == 1
     assert (test["text"] == "my bag is lost again").sum() == 0
     assert not set(train["text"]) & set(test["text"])
+
+
+def test_duplicate_tweet_ids_are_dropped_keeping_the_earliest(raw):
+    _, before = clean(raw)
+    assert before["duplicate_tweet_id_rows_removed"] == 0
+
+    # Two different texts under one tweet_id; the later one is listed first.
+    same_id = pd.DataFrame(
+        [
+            _row(950, 21, 10, "positive", text="second version of the tweet"),
+            _row(950, 20, 10, "negative", text="first version of the tweet"),
+        ]
+    )
+    df, stats = clean(pd.concat([raw, same_id], ignore_index=True))
+
+    assert stats["duplicate_tweet_id_rows_removed"] == 1
+    assert stats["duplicate_text_rows_removed"] == before["duplicate_text_rows_removed"]
+    assert stats["rows"] == before["rows"] + 1
+    assert df["tweet_id"].is_unique
+    assert "first version of the tweet" in set(df["text"])
+    assert "second version of the tweet" not in set(df["text"])
 
 
 def test_no_test_tweet_is_before_the_cutoff(raw, cfg):
