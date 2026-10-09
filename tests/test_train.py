@@ -48,6 +48,8 @@ def test_pipeline_predicts_only_the_three_labels(raw, cfg):
 
 def test_committed_model_predicts_only_the_three_labels():
     pipe = joblib.load(config.MODEL_PATH)
+    # a cached memory address here would make the file differ between runs
+    assert "_stop_words_id" not in vars(pipe.named_steps["tfidf"])
     texts = ["@united my flight was cancelled and nobody helped", "@delta thanks, great crew!", ""]
     assert set(pipe.predict(texts)) <= set(LABELS)
     assert list(pipe.classes_) == LABELS

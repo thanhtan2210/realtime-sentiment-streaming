@@ -211,6 +211,9 @@ def run(raw: pd.DataFrame, cfg: dict, model_out: str, metrics_out: str) -> dict:
         },
     }
 
+    # CountVectorizer caches id(stop_words), a memory address that changes between
+    # processes. Nothing reads it after fitting; drop it so the file is reproducible.
+    vars(model.named_steps["tfidf"]).pop("_stop_words_id", None)
     os.makedirs(os.path.dirname(model_out), exist_ok=True)
     joblib.dump(model, model_out)
     with open(metrics_out, "w", encoding="utf-8", newline="\n") as f:
