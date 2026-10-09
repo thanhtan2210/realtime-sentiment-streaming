@@ -20,3 +20,10 @@ bootstrap:
   n_resamples: 1000
 
 seed: 42
+
+# Settings for src.stream. The name after "env:" is an environment variable
+# that overrides the value; docker-compose.yml uses them for the addresses.
+stream:
+  kafka:
+    bootstrap_servers: localhost:29092   # env: KAFKA_BOOTSTRAP_SERVERS
+    topic: tweets                        # env: KAFKA_TOPIC
