@@ -4,8 +4,10 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.stream.producer import build_message, select_test_tweets, serialize
-from src.stream.transform import (
+pytest.importorskip("pyspark", reason="install requirements-spark.txt to run the Spark tests")
+
+from src.stream.producer import build_message, select_test_tweets, serialize  # noqa: E402
+from src.stream.transform import (  # noqa: E402
     LABELS,
     parse_messages,
     prediction_documents,

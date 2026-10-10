@@ -1,2 +1,2 @@
--r requirements.txt
+-r requirements-spark.txt
 pytest==9.1.1

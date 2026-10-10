@@ -4,7 +4,7 @@
 #   docker compose run --rm producer --speedup 600    # replay the test tweets
 #   docker compose down -v                            # stop and delete all data
 #
-# Memory limits add up to about 3 GB (plus 256 MB while the producer runs).
+# Memory limits add up to about 3.5 GB (plus 256 MB while the producer runs).
 name: realtime-sentiment
 
 services:
@@ -96,7 +96,7 @@ services:
       SPARK_DRIVER_MEMORY: 1g
     volumes:
       - checkpoints:/app/checkpoints
-    mem_limit: 1536m
+    mem_limit: 2048m
 
   # Not started by `docker compose up`. Run it with
   #   docker compose run --rm producer [--speedup N | --max-rate] [--limit K] [--run-id ID]

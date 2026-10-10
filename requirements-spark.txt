@@ -1,0 +1,3 @@
+-r requirements.txt
+# docker/spark.Dockerfile downloads the Kafka connector with this same version.
+pyspark==3.5.9

@@ -1,12 +1,10 @@
-# Model training and evaluation
+# Model training, the producer and (later) the dashboard.
+# The Spark processor and the Spark tests also need requirements-spark.txt.
 pandas==2.2.3
 numpy==1.26.4
 scikit-learn==1.7.2
 joblib==1.5.3
 PyYAML==6.0.3
-
-# Streaming pipeline and dashboard
-pyspark==3.5.9
 pyarrow==17.0.0
 kafka-python==2.3.2
 pymongo==4.18.3
