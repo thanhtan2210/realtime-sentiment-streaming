@@ -10,6 +10,10 @@ jobs:
   benchmark:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      # Publish the host ports on 127.0.0.1 only: a runner with IPv6 disabled
+      # cannot bind the [::1] ports of docker-compose.yml.
+      COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
     steps:
       - uses: actions/checkout@v4
 
@@ -46,6 +50,8 @@ jobs:
 
       - name: Streaming benchmark
         run: python -m scripts.benchmark_stream
+        env:
+          MONGODB_URI: mongodb://127.0.0.1:27017
 
       # Stop the streaming job so it does not compete with the micro-benchmark.
       - name: Stop the processor

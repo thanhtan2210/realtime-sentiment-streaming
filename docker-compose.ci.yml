@@ -1,0 +1,15 @@
+# Override for the GitHub Actions workflows (e2e.yml, benchmark.yml):
+#
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.ci.yml docker compose up -d
+#
+# docker-compose.yml also publishes the host ports on [::1], because Windows
+# resolves `localhost` to ::1 first. A Linux runner with IPv6 disabled cannot
+# bind that address, so here the ports are published on 127.0.0.1 only.
+services:
+  kafka:
+    ports: !override
+      - "127.0.0.1:29092:29092"
+
+  mongodb:
+    ports: !override
+      - "127.0.0.1:27017:27017"

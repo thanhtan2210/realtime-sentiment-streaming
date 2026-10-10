@@ -12,6 +12,10 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # Publish the host ports on 127.0.0.1 only: a runner with IPv6 disabled
+      # cannot bind the [::1] ports of docker-compose.yml.
+      COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
     steps:
       - uses: actions/checkout@v4
 
