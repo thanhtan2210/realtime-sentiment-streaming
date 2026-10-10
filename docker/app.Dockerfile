@@ -1,4 +1,4 @@
-# Image for the Kafka producer (and, later, the dashboard).
+# Image for the Kafka producer and the Streamlit dashboard.
 # Build from the repo root:
 #   docker build -f docker/app.Dockerfile -t realtime-sentiment-app .
 FROM python:3.11-slim-bookworm
@@ -16,3 +16,5 @@ COPY src/ src/
 COPY config/ config/
 COPY models/ models/
 COPY data/raw/ data/raw/
+COPY reports/stream_snapshot/ reports/stream_snapshot/
+COPY app.py .

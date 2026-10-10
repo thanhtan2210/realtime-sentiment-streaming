@@ -47,3 +47,14 @@ stream:
     # node. A checkpoint keeps the value it was created with, so after changing
     # this, delete the checkpoint volume (`docker compose down -v`).
     shuffle_partitions: 2                # env: SPARK_SHUFFLE_PARTITIONS
+
+# Settings for the Streamlit dashboard (src.dashboard). SENTIMENT_SOURCE
+# (mongo, snapshot or auto) picks the data source at start-up.
+dashboard:
+  # A window whose share of negative tweets is above this is flagged in the table.
+  negative_share_threshold: 0.75
+  refresh_seconds: 2
+  latest_tweets: 20
+  snapshot_dir: reports/stream_snapshot  # env: SENTIMENT_SNAPSHOT_DIR
+  # Replay mode: simulated seconds per real second (the first one is the default).
+  replay_speeds: [600, 1800, 3600]

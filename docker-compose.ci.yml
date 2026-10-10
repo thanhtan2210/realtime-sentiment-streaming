@@ -13,3 +13,7 @@ services:
   mongodb:
     ports: !override
       - "127.0.0.1:27017:27017"
+
+  dashboard:
+    ports: !override
+      - "127.0.0.1:8501:8501"

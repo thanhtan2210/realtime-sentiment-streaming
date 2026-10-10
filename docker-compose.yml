@@ -1,10 +1,11 @@
 # Kafka (KRaft, one node) -> Spark Structured Streaming -> MongoDB.
 #
-#   docker compose up -d                              # kafka, mongodb, processor
+#   docker compose up -d                              # kafka, mongodb, processor, dashboard
 #   docker compose run --rm producer --speedup 600    # replay the test tweets
+#   http://localhost:8501                             # the dashboard, live from MongoDB
 #   docker compose down -v                            # stop and delete all data
 #
-# Memory limits add up to about 3.5 GB (plus 256 MB while the producer runs).
+# Memory limits add up to about 4 GB (plus 256 MB while the producer runs).
 name: realtime-sentiment
 
 services:
@@ -97,6 +98,30 @@ services:
     volumes:
       - checkpoints:/app/checkpoints
     mem_limit: 2048m
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: docker/app.Dockerfile
+    image: realtime-sentiment-app
+    command:
+      - streamlit
+      - run
+      - app.py
+      - --server.address=0.0.0.0
+      - --server.port=8501
+      - --server.headless=true
+      - --browser.gatherUsageStats=false
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      SENTIMENT_SOURCE: mongo
+      MONGODB_URI: mongodb://mongodb:27017
+    ports:
+      - "127.0.0.1:8501:8501"
+      - "[::1]:8501:8501"
+    mem_limit: 512m
 
   # Not started by `docker compose up`. Run it with
   #   docker compose run --rm producer [--speedup N | --max-rate] [--limit K] [--run-id ID]

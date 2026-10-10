@@ -35,8 +35,9 @@ jobs:
       - name: Build images
         run: docker compose --profile replay build
 
+      # Not the dashboard: nothing should run next to the measured services.
       - name: Start the stack
-        run: docker compose up -d
+        run: docker compose up -d kafka mongodb processor
 
       - name: Wait for the processor's queries
         run: |
