@@ -7,7 +7,7 @@ from streamlit.testing.v1 import AppTest
 
 from src.common import config
 from src.dashboard import data
-from src.dashboard.app import LIVE_BANNER, MODEL_NOTE
+from src.dashboard.app import LIVE_BANNER, MODEL_NOTE, negative_share_figure
 
 HOUR = pd.Timedelta("1 hour")
 # (hour, airline, sentiment, how many). Tweets are spread over the minutes of their hour.
@@ -32,7 +32,7 @@ def fixture_predictions() -> pd.DataFrame:
                 {
                     "tweet_id": str(5700 + i),
                     "airline": airline,
-                    "text": f"@{airline} tweet number {i}",
+                    "text": f"@{airline} delays &amp; refunds, tweet number {i}",
                     "created_at": pd.Timestamp(f"2015-02-23T{hour:02d}:00:00Z") + pd.Timedelta(minutes=1 + i),
                     "sentiment": sentiment,
                     "produced_at_ms": 1_700_000_000_000 + i,
@@ -111,12 +111,56 @@ def test_last_hour_is_rolling_not_the_clock_hour_in_progress():
     assert view.recent["created_at"].min() > clock - 2 * HOUR
 
 
-def test_current_window_table_flags_shares_above_the_threshold():
+@pytest.mark.parametrize(
+    "negative, tweets, low, high",
+    [
+        (0, 10, 0.0, 0.2775),
+        (5, 10, 0.2366, 0.7634),
+        (10, 10, 0.7225, 1.0),
+        (1, 1, 0.2065, 1.0),
+        (45, 50, 0.7864, 0.9565),
+    ],
+)
+def test_wilson_interval_matches_known_values(negative, tweets, low, high):
+    assert data.wilson_interval(negative, tweets) == pytest.approx((low, high), abs=5e-5)
+
+
+def test_wilson_interval_needs_at_least_one_tweet():
+    with pytest.raises(ValueError):
+        data.wilson_interval(0, 0)
+
+
+def test_current_window_table_flags_only_windows_with_enough_tweets():
     windows = data.window_counts(fixture_predictions(), HOUR)
-    rows = data.current_window_table(windows, END_OF_HOUR_9, HOUR, threshold=0.75)
-    flagged = dict(zip(rows["airline"], rows["above_threshold"]))
-    assert flagged == {"American": True, "United": True, "Delta": False}  # 100%, 80%, 25%
+    # Hour 9: American 1 of 1 negative, United 4 of 5, Delta 1 of 4.
+    rows = data.current_window_table(windows, END_OF_HOUR_9, HOUR, threshold=0.75, min_tweets=4)
+    by_airline = rows.set_index("airline")
+    assert by_airline["enough_tweets"].to_dict() == {"American": False, "United": True, "Delta": True}
+    # American is at 100% but on a single tweet: not flagged.
+    assert by_airline["above_threshold"].to_dict() == {"American": False, "United": True, "Delta": False}
     assert list(rows["negative_share"]) == sorted(rows["negative_share"], reverse=True)
+    united = by_airline.loc["United"]
+    assert (united["ci_low"], united["ci_high"]) == pytest.approx(data.wilson_interval(4, 5))
+
+    # With the bar above every count, nothing is flagged, whatever the share.
+    strict = data.current_window_table(windows, END_OF_HOUR_9, HOUR, threshold=0.75, min_tweets=20)
+    assert not strict["enough_tweets"].any() and not strict["above_threshold"].any()
+
+
+def test_chart_fades_windows_with_too_few_tweets():
+    windows = data.window_counts(fixture_predictions(), HOUR)
+    figure = negative_share_figure(windows, ["American", "Delta", "United"], threshold=0.75, min_tweets=4)
+    united = [trace for trace in figure.data if trace.name == "United"]
+    solid, dotted, faded = united
+    # United has 4, 5 and 2 tweets in hours 8, 9 and 10: the last window is below the bar.
+    assert [y == y for y in solid.y] == [True, True, False]  # NaN where there are too few tweets
+    assert [y == y for y in faded.y] == [False, False, True]
+    assert (faded.mode, faded.opacity) == ("markers", 0.4)
+    # The dotted line runs from the last solid point into the faded one.
+    assert [y == y for y in dotted.y] == [False, True, True]
+    assert (dotted.line.dash, dotted.opacity, dotted.hoverinfo) == ("dot", 0.4, "skip")
+    assert solid.customdata.tolist() == [[4, 3], [5, 4], [2, 1]]  # tweets, negative: shown on hover
+    assert "too few tweets" in faded.hovertemplate
 
 
 def test_source_choice(monkeypatch):
@@ -167,13 +211,27 @@ def test_kpis_are_computed_from_the_fixture(snapshot_dir):
     assert (overall.value, overall.delta) == ("60%", "+10 pp vs the hour before")  # 6/10 after 3/6
     assert metric(at, "Negative share in the last hour, selected airlines").value == "60%"  # all selected
     assert any("10 tweets in the last hour, 6 in the hour before" in c.value for c in at.caption)
+    # Every window of the fixture has fewer than the configured 20 tweets, so none is flagged.
     latest = table(at, "Airline")
     assert latest.values.tolist() == [
-        ["American", 1, 1, "100%", "yes"],
-        ["United", 5, 4, "80%", "yes"],
-        ["Delta", 4, 1, "25%", "no"],
+        ["American", 1, 1, "100%", "21% to 100%", "too few tweets"],
+        ["United", 5, 4, "80%", "38% to 96%", "too few tweets"],
+        ["Delta", 4, 1, "25%", "5% to 70%", "too few tweets"],
     ]
-    assert any("Above threshold: negative share over 75%" in caption.value for caption in at.caption)
+    assert any(
+        "Above threshold: at least 20 tweets and a negative share over 75%" in caption.value
+        for caption in at.caption
+    )
+
+
+def test_tweet_text_is_unescaped_for_display_only(snapshot_dir):
+    at = open_app(END_OF_HOUR_9)
+    shown = table(at, "Created (UTC)")["Tweet"]
+    assert shown.str.contains("delays & refunds").all()
+    assert not shown.str.contains("&amp;").any()
+    # the data behind the page still holds the text exactly as stored
+    stored = data.load_snapshot(str(snapshot_dir)).predictions["text"]
+    assert stored.str.contains("&amp;").all()
 
 
 def test_changing_the_airlines_does_not_raise(snapshot_dir):

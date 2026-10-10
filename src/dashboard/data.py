@@ -3,6 +3,7 @@
 Nothing here imports Streamlit, so the calculations can be tested on their own.
 """
 import json
+import math
 import os
 from dataclasses import dataclass
 
@@ -151,13 +152,37 @@ def last_hour_kpi(recent: pd.DataFrame, now: pd.Timestamp, window: pd.Timedelta,
     }
 
 
+def wilson_interval(successes: int, n: int, z: float = 1.959964) -> tuple[float, float]:
+    """Wilson score interval for a proportion (95% by default). Sensible even for tiny n."""
+    if n <= 0:
+        raise ValueError("n must be positive")
+    share = successes / n
+    denominator = 1 + z * z / n
+    centre = (share + z * z / (2 * n)) / denominator
+    half_width = z * math.sqrt(share * (1 - share) / n + z * z / (4 * n * n)) / denominator
+    return max(0.0, centre - half_width), min(1.0, centre + half_width)
+
+
 def current_window_table(
-    windows: pd.DataFrame, now: pd.Timestamp, window: pd.Timedelta, threshold: float, airlines=None
+    windows: pd.DataFrame,
+    now: pd.Timestamp,
+    window: pd.Timedelta,
+    threshold: float,
+    min_tweets: int,
+    airlines=None,
 ) -> pd.DataFrame:
-    """One row per airline for the window containing `now`, flagged when above the threshold."""
+    """One row per airline for the window containing `now`.
+
+    `above_threshold` needs both enough tweets and a negative share over the
+    threshold; a window with fewer than `min_tweets` tweets is never flagged.
+    """
     rows = windows[windows["window_start"] == now.floor(window)]
     if airlines is not None:
         rows = rows[rows["airline"].isin(airlines)]
     table = rows[["airline", "total", "negative", "negative_share"]].copy()
-    table["above_threshold"] = table["negative_share"] > threshold
+    intervals = [wilson_interval(int(k), int(n)) for k, n in zip(table["negative"], table["total"])]
+    table["ci_low"] = [low for low, _ in intervals]
+    table["ci_high"] = [high for _, high in intervals]
+    table["enough_tweets"] = table["total"] >= min_tweets
+    table["above_threshold"] = table["enough_tweets"] & (table["negative_share"] > threshold)
     return table.sort_values("negative_share", ascending=False).reset_index(drop=True)

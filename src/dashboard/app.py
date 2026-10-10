@@ -6,13 +6,14 @@ SENTIMENT_SOURCE picks the data: `mongo`, `snapshot`, or `auto` (the default:
 MongoDB if it answers within 2 seconds, otherwise the snapshot). The page
 always says which one it is showing.
 """
+import html
 import json
 import os
 import time
 from datetime import timedelta
 
 import pandas as pd
-import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 from pymongo import MongoClient
 
@@ -30,6 +31,8 @@ MODEL_NOTE = "Measured offline on the same two days that this stream replays."
 # checks on both Streamlit's light and dark backgrounds.
 SERIES_COLORS = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300"]
 REFERENCE_LINE_COLOR = "#8a8f98"
+FADED_OPACITY = 0.4  # windows with too few tweets
+TOO_FEW = "too few tweets"
 
 
 @st.cache_data
@@ -71,6 +74,80 @@ def share_metric(column, label: str, kpi: dict, span: str) -> None:
     column.caption(f"{kpi['tweets']} tweets in the last {span}, {kpi['previous_tweets']} in the {span} before")
 
 
+def negative_share_figure(
+    rows: pd.DataFrame, all_airlines: list[str], threshold: float, min_tweets: int
+) -> go.Figure:
+    """Negative share per window, one colour per airline.
+
+    A window with fewer than `min_tweets` tweets is a faded marker, and the
+    line into and out of it is faded and dotted; the rest is solid.
+    """
+    figure = go.Figure()
+    hover = "%{y:.0%} of %{customdata[0]} tweets (%{customdata[1]} negative)"
+    for airline, color in zip(all_airlines, SERIES_COLORS):
+        series = rows[rows["airline"] == airline].sort_values("window_start")
+        if series.empty:
+            continue
+        x, share = series["window_start"], series["negative_share"]
+        counts = series[["total", "negative"]].to_numpy()
+        enough = (series["total"] >= min_tweets).to_numpy()
+        # A point belongs to the dotted line if it or one of its neighbours has too few tweets.
+        thin = ~enough
+        thin[:-1] |= ~enough[1:]
+        thin[1:] |= ~enough[:-1]
+        figure.add_trace(
+            go.Scatter(
+                x=x, y=share.where(enough), customdata=counts, name=airline, legendgroup=airline,
+                mode="lines+markers", connectgaps=False,
+                line={"color": color, "width": 2}, marker={"color": color, "size": 7},
+                hovertemplate=hover,
+            )
+        )  # fmt: skip
+        figure.add_trace(
+            go.Scatter(
+                x=x, y=share.where(thin), name=airline, legendgroup=airline, showlegend=False,
+                mode="lines", connectgaps=False, opacity=FADED_OPACITY,
+                line={"color": color, "width": 2, "dash": "dot"}, hoverinfo="skip",
+            )
+        )  # fmt: skip
+        figure.add_trace(
+            go.Scatter(
+                x=x, y=share.where(~enough), customdata=counts, name=airline, legendgroup=airline,
+                showlegend=False, mode="markers", opacity=FADED_OPACITY,
+                marker={"color": color, "size": 7},
+                hovertemplate=hover + f", {TOO_FEW}",
+            )
+        )  # fmt: skip
+    figure.add_hline(
+        y=threshold,
+        line_dash="dash",
+        line_color=REFERENCE_LINE_COLOR,
+        line_width=1,
+        annotation_text=f"threshold {threshold:.0%}",
+        annotation_position="top left",
+    )
+    figure.update_xaxes(title_text="Window start (UTC)")
+    figure.update_yaxes(title_text="Negative share", range=[0, 1.05], tickformat=".0%")
+    figure.update_layout(
+        margin={"l": 10, "r": 10, "t": 30, "b": 10},
+        height=380,
+        hovermode="x unified",
+        legend_title_text="Airline",
+        legend_tracegroupgap=0,
+    )
+    return figure
+
+
+def interval_text(low: float, high: float) -> str:
+    return f"{low:.0%} to {high:.0%}"
+
+
+def flag_text(enough_tweets: bool, above_threshold: bool) -> str:
+    if not enough_tweets:
+        return TOO_FEW
+    return "yes" if above_threshold else "no"
+
+
 def render(view: data.View, all_airlines: list[str], window: pd.Timedelta, dashboard_cfg: dict) -> None:
     """The part of the page that is the same for live and replayed data."""
     if view.now is None:
@@ -80,6 +157,7 @@ def render(view: data.View, all_airlines: list[str], window: pd.Timedelta, dashb
 
     selected = st.multiselect("Airlines", all_airlines, default=all_airlines, key="airlines")
     threshold = dashboard_cfg["negative_share_threshold"]
+    min_tweets = dashboard_cfg["min_tweets"]
 
     span = span_label(window)
     everyone = data.last_hour_kpi(view.recent, view.now, window)
@@ -95,29 +173,7 @@ def render(view: data.View, all_airlines: list[str], window: pd.Timedelta, dashb
     if chart_rows.empty:
         st.write("No tweets for the selected airlines yet.")
     else:
-        figure = px.line(
-            chart_rows,
-            x="window_start",
-            y="negative_share",
-            color="airline",
-            markers=True,
-            hover_data={"total": True, "negative": True},
-            labels={"window_start": "Window start (UTC)", "negative_share": "Negative share",
-                    "airline": "Airline", "total": "Tweets", "negative": "Negative"},
-            category_orders={"airline": all_airlines},
-            color_discrete_map=dict(zip(all_airlines, SERIES_COLORS)),
-        )  # fmt: skip
-        figure.update_traces(line_width=2, marker_size=7)
-        figure.add_hline(
-            y=threshold,
-            line_dash="dash",
-            line_color=REFERENCE_LINE_COLOR,
-            line_width=1,
-            annotation_text=f"threshold {threshold:.0%}",
-            annotation_position="top left",
-        )
-        figure.update_yaxes(range=[0, 1.05], tickformat=".0%")
-        figure.update_layout(margin={"l": 10, "r": 10, "t": 30, "b": 10}, height=380, hovermode="x unified")
+        figure = negative_share_figure(chart_rows, all_airlines, threshold, min_tweets)
         st.plotly_chart(figure, use_container_width=True, key="negative_share_chart")
         with st.expander("Chart data as a table"):
             st.dataframe(
@@ -134,13 +190,16 @@ def render(view: data.View, all_airlines: list[str], window: pd.Timedelta, dashb
                 use_container_width=True,
                 key="chart_table",
             )
-    st.caption("One point is one airline in one window. Windows with few tweets swing widely; hover for the count.")
+    st.caption(
+        f"One point is one airline in one window. Windows with fewer than {min_tweets} tweets swing "
+        "widely: they are drawn faded, with a dotted line. Hover for the count."
+    )
 
     table_column, tweets_column = st.columns([2, 3])
     with table_column:
         st.subheader("Window in progress, by airline")
         st.caption(window_label(view.now.floor(window), window))
-        table = data.current_window_table(view.windows, view.now, window, threshold, selected)
+        table = data.current_window_table(view.windows, view.now, window, threshold, min_tweets, selected)
         st.dataframe(
             pd.DataFrame(
                 {
@@ -148,14 +207,18 @@ def render(view: data.View, all_airlines: list[str], window: pd.Timedelta, dashb
                     "Tweets": table["total"],
                     "Negative": table["negative"],
                     "Negative share": table["negative_share"].map(percent),
-                    "Above threshold": table["above_threshold"].map({True: "yes", False: "no"}),
+                    "95% CI": list(map(interval_text, table["ci_low"], table["ci_high"])),
+                    "Above threshold": list(map(flag_text, table["enough_tweets"], table["above_threshold"])),
                 }
             ),
             hide_index=True,
             use_container_width=True,
             key="latest_window_table",
         )
-        st.caption(f"Above threshold: negative share over {threshold:.0%} (config/pipeline.yaml).")
+        st.caption(
+            f"Above threshold: at least {min_tweets} tweets and a negative share over {threshold:.0%} "
+            "(config/pipeline.yaml). 95% CI: Wilson interval for the negative share."
+        )
     with tweets_column:
         st.subheader(f"Latest {dashboard_cfg['latest_tweets']} tweets")
         latest = view.latest[view.latest["airline"].isin(selected)]
@@ -165,7 +228,8 @@ def render(view: data.View, all_airlines: list[str], window: pd.Timedelta, dashb
                     "Created (UTC)": latest["created_at"].dt.strftime("%Y-%m-%d %H:%M"),
                     "Airline": latest["airline"],
                     "Predicted": latest["sentiment"],
-                    "Tweet": latest["text"],
+                    # Display only: the stored text and the model's input keep entities like &amp;.
+                    "Tweet": latest["text"].map(html.unescape),
                 }
             ),
             hide_index=True,
