@@ -1,4 +1,5 @@
 """Spark logic of the streaming job, run on small batch DataFrames (needs Java)."""
+import sys
 from datetime import datetime, timezone
 
 import pytest
@@ -16,6 +17,7 @@ from src.stream.transform import (
 pytestmark = pytest.mark.spark
 
 KAFKA_TIME = datetime(2026, 1, 1, 12, 0, 0)
+PREDICTION_SCHEMA = "tweet_id string, event_time timestamp, airline string, sentiment string"
 
 
 def utc(day, hour, minute=0):
@@ -79,14 +81,14 @@ def test_predictions_use_the_three_labels_and_tweet_id_as_document_id(kafka_reco
 def test_window_counts_and_negative_share(spark):
     predictions = spark.createDataFrame(
         [
-            (utc(23, 8, 5), "United", "negative"),
-            (utc(23, 8, 20), "United", "negative"),
-            (utc(23, 8, 40), "United", "positive"),
-            (utc(23, 8, 59), "United", "neutral"),
-            (utc(23, 9, 0), "United", "positive"),  # next window
-            (utc(23, 8, 30), "Delta", "neutral"),
+            ("1", utc(23, 8, 5), "United", "negative"),
+            ("2", utc(23, 8, 20), "United", "negative"),
+            ("3", utc(23, 8, 40), "United", "positive"),
+            ("4", utc(23, 8, 59), "United", "neutral"),
+            ("5", utc(23, 9, 0), "United", "positive"),  # next window
+            ("6", utc(23, 8, 30), "Delta", "neutral"),
         ],
-        "event_time timestamp, airline string, sentiment string",
+        PREDICTION_SCHEMA,
     )
     documents = window_documents(window_counts(predictions, "1 hour", "30 minutes"))
     rows = {row["_id"]: row.asDict() for row in documents.collect()}
@@ -106,6 +108,61 @@ def test_window_counts_and_negative_share(spark):
     assert (next_hour["negative"], next_hour["total"], next_hour["negative_share"]) == (0, 1, 0.0)
     delta = rows["Delta|2015-02-23T08:00:00Z"]
     assert (delta["neutral"], delta["total"], delta["negative_share"]) == (1, 1, 0.0)
+
+
+def test_a_tweet_delivered_twice_is_counted_once_in_its_window(spark):
+    predictions = spark.createDataFrame(
+        [
+            ("1", utc(23, 8, 5), "United", "negative"),
+            ("1", utc(23, 8, 5), "United", "negative"),  # the same tweet again
+            ("2", utc(23, 8, 20), "United", "positive"),
+            ("3", utc(23, 8, 20), "Delta", "neutral"),
+            ("3", utc(23, 8, 20), "Delta", "neutral"),
+            ("3", utc(23, 8, 20), "Delta", "neutral"),
+        ],
+        PREDICTION_SCHEMA,
+    )
+    rows = {
+        row["_id"]: row.asDict()
+        for row in window_documents(window_counts(predictions, "1 hour", "30 minutes")).collect()
+    }
+
+    united = rows["United|2015-02-23T08:00:00Z"]
+    assert (united["negative"], united["positive"], united["total"]) == (1, 1, 2)
+    assert united["negative_share"] == pytest.approx(0.5)
+    delta = rows["Delta|2015-02-23T08:00:00Z"]
+    assert (delta["neutral"], delta["total"]) == (1, 1)
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Spark's streaming state store needs Hadoop's native Windows libraries",
+)
+def test_streaming_query_counts_a_redelivered_tweet_once(spark, tmp_path):
+    """The real streaming operator, across two micro-batches, in update mode."""
+    source = str(tmp_path / "in")
+    first = [("1", utc(23, 8, 5), "United", "negative")]
+    second = [("1", utc(23, 8, 5), "United", "negative"), ("2", utc(23, 8, 20), "United", "positive")]
+    for rows in (first, second):
+        spark.createDataFrame(rows, PREDICTION_SCHEMA).coalesce(1).write.mode("append").parquet(source)
+
+    updates = []
+    stream = spark.readStream.schema(PREDICTION_SCHEMA).option("maxFilesPerTrigger", 1).parquet(source)
+    query = (
+        window_documents(window_counts(stream, "1 hour", "30 minutes"))
+        .writeStream.outputMode("update")
+        .foreachBatch(lambda batch, _: updates.extend(row.asDict() for row in batch.collect()))
+        .option("checkpointLocation", str(tmp_path / "checkpoint"))
+        .trigger(availableNow=True)
+        .start()
+    )
+    assert query.awaitTermination(180)
+    assert query.exception() is None
+
+    latest = {row["_id"]: row for row in updates}  # update mode: the last row per key wins
+    assert set(latest) == {"United|2015-02-23T08:00:00Z"}
+    united = latest["United|2015-02-23T08:00:00Z"]
+    assert (united["negative"], united["positive"], united["total"]) == (1, 1, 2)
 
 
 def test_window_totals_match_the_number_of_predictions(kafka_records):

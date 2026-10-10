@@ -54,8 +54,12 @@ def build_message(row, run_id: str | None, produced_at_ms: int) -> TweetMessage:
 
 
 def serialize(message: TweetMessage) -> tuple[bytes, bytes]:
-    """Kafka (key, value): the airline, and the message as JSON."""
-    return message.airline.encode("utf-8"), message.model_dump_json().encode("utf-8")
+    """Kafka (key, value): the tweet id, and the message as JSON.
+
+    Keying by tweet id spreads tweets evenly over the partitions and sends any
+    re-sent copy of a tweet to the same partition as the original.
+    """
+    return message.tweet_id.encode("utf-8"), message.model_dump_json().encode("utf-8")
 
 
 def send_offsets(created_at: pd.Series, speedup: float) -> list[float]:

@@ -72,7 +72,7 @@ def test_serialized_message_has_the_agreed_fields_and_no_label(raw, cfg):
     key, value = serialize(build_message(row, run_id=None, produced_at_ms=1_700_000_000_000))
     payload = json.loads(value.decode("utf-8"))
 
-    assert key == row.airline.encode("utf-8")
+    assert key == row.tweet_id.encode("utf-8")
     assert set(payload) == {"tweet_id", "airline", "text", "created_at", "produced_at_ms"}
     assert payload["tweet_id"] == row.tweet_id
     assert payload["produced_at_ms"] == 1_700_000_000_000
@@ -85,6 +85,7 @@ def test_run_id_is_appended_to_tweet_id(raw, cfg):
     row = first_row(raw, cfg)
     message = build_message(row, run_id="r3", produced_at_ms=1)
     assert message.tweet_id == f"{row.tweet_id}-r3"
+    assert serialize(message)[0] == f"{row.tweet_id}-r3".encode("utf-8")
 
 
 @pytest.mark.parametrize(

@@ -85,13 +85,22 @@ def prediction_documents(predictions: DataFrame) -> DataFrame:
 
 
 def window_counts(predictions: DataFrame, window: str, watermark: str) -> DataFrame:
-    """Tweets per label for each airline and event-time window."""
+    """Tweets per label for each airline and event-time window.
+
+    A tweet delivered more than once within the watermark is counted once.
+    """
     counts = [
         F.sum(F.when(F.col("sentiment") == label, 1).otherwise(0)).alias(label) for label in LABELS
     ]
+    tweets = predictions.withWatermark("event_time", watermark)
+    if predictions.isStreaming:
+        tweets = tweets.dropDuplicatesWithinWatermark(["tweet_id"])
+    else:
+        # Spark rejects dropDuplicatesWithinWatermark on batch DataFrames;
+        # without a watermark the plain version does the same job.
+        tweets = tweets.dropDuplicates(["tweet_id"])
     return (
-        predictions.withWatermark("event_time", watermark)
-        .groupBy(F.window("event_time", window).alias("window"), "airline")
+        tweets.groupBy(F.window("event_time", window).alias("window"), "airline")
         .agg(F.count(F.lit(1)).alias("total"), *counts)
         .withColumn("negative_share", F.col("negative") / F.col("total"))
     )

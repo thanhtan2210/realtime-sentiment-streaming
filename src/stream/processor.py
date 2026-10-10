@@ -5,7 +5,8 @@ Usage (inside the Spark image, where the Kafka and MongoDB connectors are instal
 
 Two queries read the same topic, each with its own checkpoint:
   predictions      one document per tweet, `_id` = tweet_id
-  airline_windows  label counts per airline and event-time window, `_id` = airline|window_start
+  airline_windows  label counts per airline and event-time window, `_id` = airline|window_start;
+                   a tweet delivered twice within the watermark is counted once
 
 Both sinks replace documents by `_id`, so replaying a batch does not create duplicates.
 The process exits with a non-zero code if the model file is missing, Kafka or
@@ -93,8 +94,12 @@ class ProgressLogger(StreamingQueryListener):
         if progress["numInputRows"] > 0:
             keep = ("name", "batchId", "timestamp", "numInputRows", "processedRowsPerSecond", "durationMs")
             line = {key: progress.get(key) for key in keep}
+            operators = progress.get("stateOperators", [])
             line["rowsDroppedByWatermark"] = sum(
-                op.get("numRowsDroppedByWatermark", 0) for op in progress.get("stateOperators", [])
+                op.get("numRowsDroppedByWatermark", 0) for op in operators
+            )
+            line["duplicatesDropped"] = sum(
+                op.get("customMetrics", {}).get("numDroppedDuplicateRows", 0) for op in operators
             )
             logger.info("PROGRESS " + json.dumps(line))
 
