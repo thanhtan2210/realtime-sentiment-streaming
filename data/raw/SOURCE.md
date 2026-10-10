@@ -6,7 +6,7 @@
 | Original publisher | Crowdflower / Figure Eight, "Data for Everyone" library |
 | Dataset page | https://www.kaggle.com/datasets/crowdflower/twitter-airline-sentiment |
 | Downloaded from | https://huggingface.co/datasets/osanseviero/twitter-airline-sentiment/resolve/dec17e9391b767791e3808a655654467605a9d49/Tweets.csv |
-| Downloaded on | 2026-10-09 (UTC) |
+| Downloaded on | 2026-10-10 (UTC) |
 | License | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) |
 | File | `Tweets.csv` |
 | Size | 3421431 bytes |
@@ -23,6 +23,8 @@ the mirror's dataset card. It is non-commercial and share-alike.
 `Tweets.csv`, and anything produced from it that contains tweet text, is under
 CC BY-NC-SA 4.0: exports or snapshots of the stream (predictions stored with
 their `text`), samples, and screenshots that show tweets.
+In this repository that includes `reports/stream_snapshot/` (the recorded run
+the dashboard replays) and the screenshots in `docs/images/`.
 `models/sentiment_pipeline.joblib` stores a vocabulary of words and word pairs
 taken from the tweets, so treat it the same way.
 

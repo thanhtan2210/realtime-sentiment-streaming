@@ -69,6 +69,8 @@ def write_source(data: bytes, downloaded_on: str) -> None:
                 f"`{FILENAME}`, and anything produced from it that contains tweet text, is under",
                 f"{LICENSE_NAME}: exports or snapshots of the stream (predictions stored with",
                 "their `text`), samples, and screenshots that show tweets.",
+                "In this repository that includes `reports/stream_snapshot/` (the recorded run",
+                "the dashboard replays) and the screenshots in `docs/images/`.",
                 "`models/sentiment_pipeline.joblib` stores a vocabulary of words and word pairs",
                 "taken from the tweets, so treat it the same way.",
                 "",
