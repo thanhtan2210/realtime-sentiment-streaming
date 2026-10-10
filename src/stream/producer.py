@@ -10,6 +10,7 @@ not sent.
 import argparse
 import sys
 import time
+from datetime import timedelta
 
 import pandas as pd
 from kafka import KafkaProducer
@@ -42,13 +43,16 @@ def select_test_tweets(raw: pd.DataFrame, cfg: dict, limit: int | None = None) -
     return test if limit is None else test.head(limit)
 
 
-def build_message(row, run_id: str | None, produced_at_ms: int) -> TweetMessage:
+def build_message(
+    row, run_id: str | None, produced_at_ms: int, time_shift_days: int = 0
+) -> TweetMessage:
+    """`time_shift_days` moves the tweet's event time by whole days, keeping its UTC offset."""
     tweet_id = f"{row.tweet_id}-{run_id}" if run_id else row.tweet_id
     return TweetMessage(
         tweet_id=tweet_id,
         airline=row.airline,
         text=row.text,
-        created_at=row.created_at,
+        created_at=row.created_at + timedelta(days=time_shift_days),
         produced_at_ms=produced_at_ms,
     )
 
@@ -67,7 +71,14 @@ def send_offsets(created_at: pd.Series, speedup: float) -> list[float]:
     return ((created_at - created_at.iloc[0]).dt.total_seconds() / speedup).tolist()
 
 
-def replay(producer, topic: str, tweets: pd.DataFrame, speedup: float | None, run_id: str | None):
+def replay(
+    producer,
+    topic: str,
+    tweets: pd.DataFrame,
+    speedup: float | None,
+    run_id: str | None,
+    time_shift_days: int = 0,
+):
     """Send every tweet; `speedup=None` means as fast as possible. Returns (sent, failed)."""
     counts = {"sent": 0, "failed": 0}
 
@@ -86,7 +97,8 @@ def replay(producer, topic: str, tweets: pd.DataFrame, speedup: float | None, ru
             if wait > 0:
                 time.sleep(wait)
         try:
-            key, value = serialize(build_message(row, run_id, int(time.time() * 1000)))
+            message = build_message(row, run_id, int(time.time() * 1000), time_shift_days)
+            key, value = serialize(message)
         except ValidationError as exc:
             counts["failed"] += 1
             logger.warning(f"Invalid tweet {row.tweet_id} skipped: {exc.errors()}")
@@ -117,6 +129,12 @@ def parse_args(argv=None):
         default=None,
         help="suffix added to tweet_id so repeated runs do not share keys",
     )
+    parser.add_argument(
+        "--time-shift-days",
+        type=int,
+        default=0,
+        help="add D days to every created_at, so a repeated run is not late for the watermark",
+    )
     args = parser.parse_args(argv)
     if args.speedup <= 0:
         parser.error("--speedup must be positive")
@@ -139,7 +157,9 @@ def main(argv=None) -> int:
     pace = "max rate" if speedup is None else f"speedup {speedup:g}"
     logger.info(f"Replaying {len(tweets)} test tweets to '{kafka['topic']}' ({pace})")
     started = time.monotonic()
-    sent, failed = replay(producer, kafka["topic"], tweets, speedup, args.run_id)
+    sent, failed = replay(
+        producer, kafka["topic"], tweets, speedup, args.run_id, args.time_shift_days
+    )
     producer.close()
     logger.info(f"Done in {time.monotonic() - started:.1f}s: sent={sent} failed={failed}")
     return 0 if failed == 0 and sent == len(tweets) else 1

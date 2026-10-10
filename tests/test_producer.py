@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pandas as pd
 import pytest
@@ -88,6 +88,40 @@ def test_run_id_is_appended_to_tweet_id(raw, cfg):
     assert serialize(message)[0] == f"{row.tweet_id}-r3".encode("utf-8")
 
 
+@pytest.mark.parametrize("days", [3, 12, -3])
+def test_time_shift_moves_created_at_by_whole_days_and_keeps_the_offset(raw, cfg, days):
+    row = first_row(raw, cfg)
+    plain = build_message(row, run_id="r1", produced_at_ms=1)
+    shifted = build_message(row, run_id="r1", produced_at_ms=1, time_shift_days=days)
+
+    assert shifted.created_at - plain.created_at == timedelta(days=days)
+    assert shifted.created_at.utcoffset() == plain.created_at.utcoffset()
+    assert shifted.created_at.time() == plain.created_at.time()
+    assert shifted.tweet_id == plain.tweet_id == f"{row.tweet_id}-r1"
+    # the shift survives serialisation, still with an explicit UTC offset
+    sent = datetime.fromisoformat(json.loads(serialize(shifted)[1])["created_at"].replace("Z", "+00:00"))
+    assert sent == row.created_at + timedelta(days=days)
+    assert sent.utcoffset() == row.created_at.utcoffset()
+
+
+def test_time_shift_keeps_a_non_utc_offset():
+    message = TweetMessage(**VALID)  # created_at is 09:00 at -08:00
+    row = message.model_copy()  # has tweet_id, airline, text, created_at like a tweet row
+    shifted = build_message(row, run_id=None, produced_at_ms=1, time_shift_days=3)
+    assert shifted.created_at.isoformat() == "2015-02-26T09:00:00-08:00"
+
+
+def test_replay_applies_the_time_shift_to_every_message(raw, cfg):
+    tweets = select_test_tweets(raw, cfg, limit=4)
+    fake = FakeProducer()
+    replay(fake, "tweets", tweets, speedup=None, run_id="r2", time_shift_days=6)
+    sent = [
+        datetime.fromisoformat(json.loads(value)["created_at"].replace("Z", "+00:00"))
+        for _, _, value in fake.records
+    ]
+    assert sent == [t + timedelta(days=6) for t in tweets["created_at"]]
+
+
 @pytest.mark.parametrize(
     "change",
     [
@@ -125,6 +159,8 @@ def test_replay_counts_successes_and_failures_and_flushes(raw, cfg):
 def test_speedup_and_max_rate_are_mutually_exclusive():
     assert parse_args(["--max-rate", "--limit", "500"]).max_rate
     assert parse_args(["--speedup", "600"]).speedup == 600
+    assert parse_args([]).time_shift_days == 0
+    assert parse_args(["--time-shift-days", "-3"]).time_shift_days == -3
     with pytest.raises(SystemExit):
         parse_args(["--speedup", "600", "--max-rate"])
 

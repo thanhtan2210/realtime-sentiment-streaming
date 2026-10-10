@@ -6,7 +6,9 @@ Usage (from the repo root, after `docker compose up -d` on a fresh stack):
 After a small untimed warm-up (the first batch pays for JVM and Python worker
 start-up and for loading the model), the whole test set is replayed --rounds
 times at max rate, one run-id per round, and the script waits until MongoDB
-holds every prediction. From the stored documents:
+holds every prediction. Round k shifts the tweets' event time by 3*k days
+(the warm-up by -3 days), so no round is late for the watermark and every
+tweet goes through the window aggregation. From the stored documents:
 
   throughput  records / (last written_at - first produced_at_ms)
   latency     p50 / p95 / p99 of written_at - produced_at_ms, and of the same
@@ -18,6 +20,10 @@ own; the acknowledgement time comes from the processor's `WRITE` log lines.
 The producer runs in a container, so produced_at_ms and written_at come from
 the same clock. Batch step timings come from the `PROGRESS` log lines
 (Spark's StreamingQueryProgress.durationMs).
+
+The run ends with two checks, written to the report: the window totals grew by
+exactly the number of timed tweets, and the watermark dropped no row. The
+script exits with code 1 if either fails.
 """
 import argparse
 import json
@@ -44,6 +50,8 @@ from src.stream.producer import select_test_tweets
 from src.stream.settings import stream_settings
 
 WARMUP_RECORDS = 200
+WARMUP_SHIFT_DAYS = -3  # its own event-time range, before round 0
+ROUND_SHIFT_DAYS = 3  # the test set spans about 36 hours
 
 
 def run(command: list[str]) -> str:
@@ -134,6 +142,20 @@ def main() -> int:
     client = MongoClient(mongodb["uri"], serverSelectionTimeoutMS=10_000)
     mongodb_version = client.server_info()["version"]
     predictions = client[mongodb["database"]][mongodb["predictions_collection"]]
+    windows = client[mongodb["database"]][mongodb["windows_collection"]]
+
+    # Windows of the timed rounds: everything from the first test tweet's hour
+    # on. The warm-up, shifted back, falls before it.
+    first_event = select_test_tweets(load_raw(), cfg, args.limit)["created_at"].min()
+    timed_windows = {"window_start": {"$gte": first_event.floor("h").to_pydatetime()}}
+
+    def window_total() -> int:
+        grouped = windows.aggregate(
+            [{"$match": timed_windows}, {"$group": {"_id": None, "total": {"$sum": "$total"}}}]
+        )
+        return next((int(row["total"]) for row in grouped), 0)
+
+    window_total_before = window_total()
     partitions = topic_partitions(settings["kafka"]["topic"])
 
     def wait_for(query: dict, count: int) -> list[dict]:
@@ -148,7 +170,8 @@ def main() -> int:
     limit = ["--limit", str(args.limit)] if args.limit else []
 
     warmup_command = ["docker", "compose", "run", "--rm", "producer", "--max-rate",
-                      "--limit", str(WARMUP_RECORDS), "--run-id", f"{bench_id}warmup"]  # fmt: skip
+                      "--limit", str(WARMUP_RECORDS), "--run-id", f"{bench_id}warmup",
+                      "--time-shift-days", str(WARMUP_SHIFT_DAYS)]  # fmt: skip
     print(f"Warm-up: {WARMUP_RECORDS} tweets ...")
     run(warmup_command)
     warm_produced, warm_written = to_ms(wait_for({"_id": {"$regex": f"-{bench_id}warmup$"}}, WARMUP_RECORDS))
@@ -156,14 +179,20 @@ def main() -> int:
 
     # One container, N producer runs back to back: no container start-up between rounds.
     loop = " && ".join(
-        " ".join(["python", "-m", "src.stream.producer", "--max-rate", *limit, "--run-id", f"{bench_id}r{i}"])
-        for i in range(1, args.rounds + 1)
-    )
+        " ".join(["python", "-m", "src.stream.producer", "--max-rate", *limit,
+                  "--run-id", f"{bench_id}r{k}", "--time-shift-days", str(ROUND_SHIFT_DAYS * k)])
+        for k in range(args.rounds)
+    )  # fmt: skip
     command = ["docker", "compose", "run", "--rm", "--entrypoint", "sh", "producer", "-c", loop]
     print(f"Sending {args.rounds} x {per_round} tweets at max rate ...")
     run(command)
     produced, written = to_ms(wait_for({"_id": {"$regex": f"-{bench_id}r[0-9]+$"}}, expected))
+    # The window query is a separate stream; give it up to a minute to catch up.
+    deadline = time.monotonic() + 60
+    while window_total() - window_total_before < expected and time.monotonic() < deadline:
+        time.sleep(1)
     time.sleep(10)  # let the last progress events reach the processor's log
+    window_total_added = window_total() - window_total_before
 
     # A micro-batch stamps all its documents with one written_at, which the
     # processor also logs: that links each document to its batch.
@@ -185,6 +214,15 @@ def main() -> int:
         p for p in progress if p["name"] == "airline_windows" and p["timestamp"] >= first_batch_started
     ]
     acknowledged = written + np.array([write_by_stamp[stamp]["mongoWriteMs"] for stamp in written.tolist()])
+    dropped_by_watermark = sum(b["rowsDroppedByWatermark"] for b in window_batches)
+    checks = {
+        "timed_tweets_sent": expected,
+        "window_total_added": window_total_added,
+        "window_total_equals_timed_tweets": window_total_added == expected,
+        "rows_dropped_by_watermark": dropped_by_watermark,
+        "no_rows_dropped_by_watermark": dropped_by_watermark == 0,
+    }
+    checks["passed"] = checks["window_total_equals_timed_tweets"] and checks["no_rows_dropped_by_watermark"]
 
     result = {
         "measured_at_utc": utc_now(),
@@ -204,6 +242,7 @@ def main() -> int:
             "command": " ".join(warmup_command),
             "records": WARMUP_RECORDS,
             "included_in_the_results": False,
+            "time_shift_days": WARMUP_SHIFT_DAYS,
             "first_send_to_last_write_seconds": round(
                 (int(warm_written.max()) - int(warm_produced.min())) / 1000, 3
             ),
@@ -212,8 +251,10 @@ def main() -> int:
             "command": " ".join(command[:-1]) + f' "{loop}"',
             "rounds": args.rounds,
             "records_per_round": per_round,
+            "time_shift_days_per_round": [ROUND_SHIFT_DAYS * k for k in range(args.rounds)],
             "produce_seconds": round((int(produced.max()) - int(produced.min())) / 1000, 3),
         },
+        "checks": checks,
         "throughput": throughput(produced, written),
         "latency_seconds": {
             "to_written_at": latency_seconds(produced, written),
@@ -235,19 +276,17 @@ def main() -> int:
             "mongo_write_ms_total": sum(w["mongoWriteMs"] for w in batch_writes),
         },
         "airline_windows_query": {
-            "note": "Every round replays the same event times. After the first round the watermark "
-            "has passed them, so this query still scores those rows but leaves them out of the "
-            "window counts (rows_dropped_by_watermark).",
             "batches": len(window_batches),
             "input_rows": sum(b["numInputRows"] for b in window_batches),
-            "rows_dropped_by_watermark": sum(b["rowsDroppedByWatermark"] for b in window_batches),
+            "rows_dropped_by_watermark": dropped_by_watermark,
             "duplicates_dropped": sum(b["duplicatesDropped"] for b in window_batches),
             "duration_ms": duration_stats(window_batches),
         },
     }
     update_report("streaming", result, args.output)
     print(json.dumps({"throughput": result["throughput"], "latency_seconds": result["latency_seconds"]}))
-    return 0
+    print(json.dumps({"checks": checks}))
+    return 0 if checks["passed"] else 1
 
 
 if __name__ == "__main__":
