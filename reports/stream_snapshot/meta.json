@@ -1,6 +1,6 @@
 {
-  "recorded_at_utc": "2026-10-10T06:00:09Z",
-  "commit": "7f0cec7946b60fc903af9730e1018794d7443f74-dirty",
+  "recorded_at_utc": "2026-10-10T07:47:53Z",
+  "commit": "9d4ddd27a1762e4d662bac165d9fef4fa78fe4c8",
   "command": "docker compose run --rm producer --speedup 600",
   "speedup": 600,
   "tweets_sent": 4196,
