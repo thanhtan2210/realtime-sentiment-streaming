@@ -145,6 +145,7 @@ def test_stream_settings_cover_every_configurable_value():
             "MONGODB_URI": "mongodb://mongodb:27017",
             "STREAM_TRIGGER": "1 second",
             "SPARK_MASTER": "local[4]",
+            "SPARK_SHUFFLE_PARTITIONS": "4",
         },
     )
     assert settings["kafka"] == {"bootstrap_servers": "kafka:9092", "topic": "tweets"}
@@ -158,3 +159,5 @@ def test_stream_settings_cover_every_configurable_value():
     )
     assert settings["spark"]["master"] == "local[4]"
     assert settings["spark"]["driver_memory"] == "1g"
+    assert settings["spark"]["shuffle_partitions"] == "4"
+    assert stream_settings(load_config(), env={})["spark"]["shuffle_partitions"] == 2

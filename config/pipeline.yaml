@@ -42,4 +42,8 @@ stream:
   spark:
     master: local[2]                     # env: SPARK_MASTER
     driver_memory: 1g                    # env: SPARK_DRIVER_MEMORY
-    shuffle_partitions: 2
+    # spark.sql.shuffle.partitions: also the number of state-store partitions
+    # of the window query. Spark's default of 200 is far too many for one small
+    # node. A checkpoint keeps the value it was created with, so after changing
+    # this, delete the checkpoint volume (`docker compose down -v`).
+    shuffle_partitions: 2                # env: SPARK_SHUFFLE_PARTITIONS

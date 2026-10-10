@@ -204,9 +204,15 @@ def main() -> int:
     spark = build_session(settings["spark"])
     spark.sparkContext.setLogLevel("WARN")
     spark.streams.addListener(ProgressLogger())
+    # Read back from the session: this is the value the queries actually run with.
+    logger.info(
+        f"Spark session: master={spark.sparkContext.master}, "
+        f"spark.driver.memory={spark.conf.get('spark.driver.memory')}, "
+        f"spark.sql.shuffle.partitions={spark.conf.get('spark.sql.shuffle.partitions')}"
+    )
     logger.info(
         f"Starting queries: trigger={settings['trigger']}, window={settings['window']}, "
-        f"watermark={settings['watermark']}, master={settings['spark']['master']}"
+        f"watermark={settings['watermark']}"
     )
     try:
         start_queries(spark, settings)

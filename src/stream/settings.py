@@ -14,6 +14,7 @@ ENV_OVERRIDES = {
     "STREAM_CHECKPOINT_DIR": ("checkpoint_dir",),
     "SPARK_MASTER": ("spark", "master"),
     "SPARK_DRIVER_MEMORY": ("spark", "driver_memory"),
+    "SPARK_SHUFFLE_PARTITIONS": ("spark", "shuffle_partitions"),
 }
 
 
