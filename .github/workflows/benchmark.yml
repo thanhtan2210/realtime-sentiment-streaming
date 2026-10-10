@@ -1,10 +1,15 @@
 name: Benchmark
 
-# Manual only. Measures the stack on the GitHub runner and uploads
-# reports/benchmark.json and the service logs as an artifact.
-# Nothing is committed or pushed.
+# Measures the stack on the GitHub runner and uploads reports/benchmark.json
+# and the service logs as an artifact. Nothing is committed or pushed.
+#
+# Run it by hand (workflow_dispatch), or push a branch named benchmark/<anything>
+# to measure that branch without merging it into main.
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - "benchmark/**"
 
 jobs:
   benchmark:

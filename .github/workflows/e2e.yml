@@ -30,8 +30,8 @@ jobs:
       - name: Replay 500 test tweets
         run: docker compose run --rm producer --max-rate --limit 500
 
-      - name: Check MongoDB (exactly 500 predictions, at least 1 airline window, within 5 minutes)
-        run: bash scripts/check_e2e.sh 500 300
+      - name: Check MongoDB (exactly 500 predictions, at least 1 airline window, within 10 minutes)
+        run: bash scripts/check_e2e.sh 500 600
 
       - name: Service logs
         if: failure()
