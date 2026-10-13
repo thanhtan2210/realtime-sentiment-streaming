@@ -1,0 +1,18 @@
+{
+  "source": {
+    "stream_predictions": "reports/stream_snapshot/predictions.parquet",
+    "snapshot_commit": "9d4ddd27a1762e4d662bac165d9fef4fa78fe4c8",
+    "offline_model": "models/sentiment_pipeline.joblib",
+    "labels": "test split of data/raw/Tweets.csv (src.ml.data)"
+  },
+  "tweets": 4196,
+  "test_tweets": 4196,
+  "same_prediction_as_offline_model": 4196,
+  "stream_accuracy": 0.7691,
+  "stream_macro_f1": 0.7107,
+  "stream_label_counts": {
+    "negative": 2572,
+    "neutral": 953,
+    "positive": 671
+  }
+}
