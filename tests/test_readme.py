@@ -341,3 +341,159 @@ def test_license_section_names_both_licenses():
     assert "Phan Thanh Tan" in text and "Phan Thanh Tan" in read("LICENSE")
     for path in ("LICENSE", "data/raw/SOURCE.md"):
         assert f"]({path})" in text and os.path.isfile(os.path.join(ROOT, path))
+
+
+# --- benchmark (reports/benchmark.json, measured on a GitHub Actions runner) -----------------------
+
+
+@pytest.fixture(scope="module")
+def benchmark():
+    if not BENCHMARK_EXISTS:
+        pytest.skip("reports/benchmark.json has not been added yet")
+    return load_json("reports", "benchmark.json")
+
+
+def tables(text: str) -> list[list[list[str]]]:
+    """Every Markdown table in `text`, each as its body rows."""
+    found, current = [], []
+    for line in text.splitlines() + [""]:
+        if line.startswith("|"):
+            current.append([cell.strip() for cell in line.strip("|").split("|")])
+        elif current:
+            found.append(current[2:])
+            current = []
+    return found
+
+
+def seconds(value: float) -> str:
+    return f"{value:.3f} s"
+
+
+def milliseconds(value: float) -> str:
+    return f"{value:.1f} ms"
+
+
+def test_benchmark_report_comes_from_a_github_runner_and_passed_its_checks(benchmark):
+    stream, micro = benchmark["streaming"], benchmark["udf_vs_pandas_udf"]
+    assert stream["machine"]["github_runner"] is True and micro["machine"]["github_runner"] is True
+    assert stream["commit"] == micro["commit"] and re.fullmatch(r"[0-9a-f]{40}", stream["commit"])
+    checks = stream["checks"]
+    assert checks["passed"] is True
+    assert checks["rows_dropped_by_watermark"] == 0
+    assert checks["window_total_added"] == checks["timed_tweets_sent"] == stream["throughput"]["records"]
+
+
+def test_benchmark_section_names_its_source_and_machine(benchmark):
+    text = section("Benchmark", level=3)
+    stream = benchmark["streaming"]
+    machine, docker, settings = stream["machine"], stream["docker"], stream["settings"]
+    assert text.startswith("Source: `reports/benchmark.json`, measured by `.github/workflows/benchmark.yml`")
+    for script in ("scripts/benchmark_stream.py", "scripts/benchmark_udf.py"):
+        assert f"`{script}`" in text and os.path.isfile(os.path.join(ROOT, script))
+    assert f"({stream['measured_at_utc'][:10]}, commit `{stream['commit'][:7]}`)" in text
+    assert (
+        f"Machine: one GitHub Actions runner, {machine['nproc']} vCPU, {machine['ram_total_gb']} GB RAM, "
+        f"{machine['cpu_model']}, Docker {docker['docker_version']}; trigger {settings['trigger']}, "
+        f"{settings['topic_partitions']} topic partitions, "
+        f"Spark limited to {docker['container_memory_limits_mb']['processor']} MB."
+    ) in text
+    load = stream["load"]
+    assert (
+        f"replayed {load['rounds']} times at maximum rate: {stream['throughput']['records']:,} tweets "
+        f"sent in {seconds(load['produce_seconds'])}"
+    ) in text
+    assert load["rounds"] * load["records_per_round"] == stream["throughput"]["records"]
+
+
+def test_benchmark_stream_table_matches_the_report(benchmark):
+    stream = benchmark["streaming"]
+    throughput, latency = stream["throughput"], stream["latency_seconds"]
+
+    def percentiles(values: dict) -> str:
+        return " / ".join(seconds(values[p]) for p in ("p50", "p95", "p99"))
+
+    assert tables(section("Benchmark", level=3))[0] == [
+        ["Tweets", f"{throughput['records']:,}"],
+        ["First send to last write", seconds(throughput["first_send_to_last_write_seconds"])],
+        ["Throughput", f"{throughput['records_per_second']} tweets per second"],
+        ["Latency from send to `written_at`: p50 / p95 / p99", percentiles(latency["to_written_at"])],
+        [
+            "Latency from send to MongoDB acknowledgement: p50 / p95 / p99",
+            percentiles(latency["to_mongodb_acknowledgement"]),
+        ],
+        ["Rows dropped by the watermark", str(stream["checks"]["rows_dropped_by_watermark"])],
+    ]
+
+
+def test_benchmark_batch_table_matches_the_report(benchmark):
+    stream = benchmark["streaming"]
+
+    def row(name: str) -> list[str]:
+        query = stream[f"{name}_query"]
+        steps = query["duration_ms"]
+        return [
+            name,
+            str(query["batches"]),
+            *(
+                f"{milliseconds(steps[step]['median_ms'])} / {milliseconds(steps[step]['p95_ms'])}"
+                for step in ("addBatch", "triggerExecution")
+            ),
+        ]
+
+    text = section("Benchmark", level=3)
+    assert tables(text)[1] == [row("predictions"), row("airline_windows")]
+    assert f"Only {stream['predictions_query']['batches']} micro-batches carried the load" in text
+
+
+def test_benchmark_udf_table_and_its_conclusion_match_the_report(benchmark):
+    micro = benchmark["udf_vs_pandas_udf"]
+    text = section("Benchmark", level=3)
+
+    def row(label: str, name: str) -> list[str]:
+        return [
+            label,
+            ", ".join(seconds(run) for run in micro["run_seconds"][name]),
+            seconds(micro["median_seconds"][name]),
+            f"{micro['median_rows_per_second'][name]:,}",
+        ]
+
+    assert tables(text)[2] == [
+        row("`udf`: one model call per row", "udf"),
+        row("`pandas_udf`: one model call per Arrow batch", "pandas_udf"),
+    ]
+    assert f"scores {micro['rows']:,} rows in {micro['partitions']} partitions" in text
+    assert micro["timed_runs_per_variant"] == 3 and "three timed runs after a warm-up" in text
+    # The sentence must say which variant was faster, whichever way the measurement went.
+    ratio = micro["pandas_udf_speedup_over_udf"]
+    assert ratio == round(micro["median_seconds"]["udf"] / micro["median_seconds"]["pandas_udf"], 2)
+    if ratio >= 1:
+        conclusion = f"The median `pandas_udf` run took {ratio} times less time than the median `udf` run."
+    else:
+        conclusion = f"The median `pandas_udf` run took {round(1 / ratio, 2)} times longer than the median `udf` run."
+    assert conclusion in text
+
+
+def test_speed_line_of_the_summary_matches_the_report(benchmark):
+    stream = benchmark["streaming"]
+    machine = stream["machine"]
+    assert (
+        f"handled {stream['throughput']['records_per_second']} tweets per second with a median latency of "
+        f"{seconds(stream['latency_seconds']['to_written_at']['p50'])} from send to `written_at`, on a GitHub "
+        f"Actions runner ({machine['nproc']} vCPU, {machine['ram_total_gb']} GB RAM)"
+    ) in section("Problem → Approach → Results")
+
+
+def test_benchmark_limitation_matches_the_report(benchmark):
+    stream = benchmark["streaming"]
+    query = stream["predictions_query"]
+    median = query["duration_ms"]["triggerExecution"]["median_ms"]
+    trigger_seconds = pd.Timedelta(stream["settings"]["trigger"]).total_seconds()
+    text = section("Limitations")
+    assert f"a single {stream['machine']['nproc']}-vCPU GitHub Actions runner with nothing else running" in text
+    assert (
+        f"Its {query['batches']} micro-batches took a median of {milliseconds(median)}, "
+        f"longer than the {trigger_seconds:.0f}-second trigger"
+    ) in text
+    # The README says the batches outlast the trigger; that has to be what was measured.
+    assert median > trigger_seconds * 1000
+    assert "says nothing about behaviour under concurrent load" in text

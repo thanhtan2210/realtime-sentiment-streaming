@@ -18,7 +18,7 @@ The demo replays a recorded run of the pipeline; it is not live Twitter data.
 - **Model.** On those two days the model's macro-F1 is 0.7107 (95% CI 0.6945 to 0.7276), against 0.2555 for always answering "negative".
 - **Stream.** One recorded replay sent 4,196 tweets and produced 4,196 predictions and 198 airline-hour windows; the watermark dropped 0 rows.
 - **Consistency.** Stream predictions match the offline model on 4,196 of 4,196 tweets.
-- **Speed.** Throughput and latency are not reported yet; see [Benchmark](#benchmark).
+- **Speed.** In a burst test the stack handled 1264.6 tweets per second with a median latency of 6.076 s from send to `written_at`, on a GitHub Actions runner (2 vCPU, 7.8 GB RAM); see [Benchmark](#benchmark).
 
 ## Results
 
@@ -75,7 +75,40 @@ Source: `reports/stream_consistency.json`, written by `python -m scripts.check_s
 
 ### Benchmark
 
-Throughput and latency are measured on a GitHub Actions runner by `.github/workflows/benchmark.yml`; results will be added to `reports/benchmark.json`.
+Source: `reports/benchmark.json`, measured by `.github/workflows/benchmark.yml`, which runs `scripts/benchmark_stream.py` and `scripts/benchmark_udf.py` (2026-10-13, commit `42fb31c`).
+
+Machine: one GitHub Actions runner, 2 vCPU, 7.8 GB RAM, INTEL(R) XEON(R) PLATINUM 8573C, Docker 28.0.4; trigger 5 seconds, 3 topic partitions, Spark limited to 2048 MB.
+
+**Streaming.** After an untimed warm-up, the whole test set was replayed 5 times at maximum rate: 20,980 tweets sent in 11.885 s.
+
+| | |
+| --- | --- |
+| Tweets | 20,980 |
+| First send to last write | 16.590 s |
+| Throughput | 1264.6 tweets per second |
+| Latency from send to `written_at`: p50 / p95 / p99 | 6.076 s / 8.943 s / 9.096 s |
+| Latency from send to MongoDB acknowledgement: p50 / p95 / p99 | 8.179 s / 11.046 s / 11.199 s |
+| Rows dropped by the watermark | 0 |
+
+Throughput is tweets divided by the time from the first send to the last write. `written_at` is stamped after the model has run on a micro-batch, just before its MongoDB write starts; the second latency adds the time that write took.
+
+**Micro-batches**, from Spark's `StreamingQueryProgress`:
+
+| Query | Micro-batches | `addBatch` median / p95 | `triggerExecution` median / p95 |
+| --- | --- | --- | --- |
+| predictions | 3 | 5805.0 ms / 6166.8 ms | 6122.0 ms / 6644.9 ms |
+| airline_windows | 3 | 5281.0 ms / 6780.4 ms | 5879.0 ms / 7103.0 ms |
+
+Only 3 micro-batches carried the load, so each p95 is close to the slowest batch.
+
+**`udf` against `pandas_udf`.** A Spark batch job scores 20,980 rows in 2 partitions with each variant, three timed runs after a warm-up:
+
+| Variant | Runs | Median | Rows per second |
+| --- | --- | --- | --- |
+| `udf`: one model call per row | 8.915 s, 8.597 s, 9.268 s | 8.915 s | 2,353 |
+| `pandas_udf`: one model call per Arrow batch | 1.028 s, 0.838 s, 0.595 s | 0.838 s | 25,036 |
+
+The median `pandas_udf` run took 10.64 times less time than the median `udf` run.
 
 ## How it works
 
@@ -126,7 +159,7 @@ The first two commands start Kafka, MongoDB, the Spark job and the dashboard, th
 - For this amount of data Spark is more machinery than the job needs; a single Python process would do. It is used here to show a streaming design: event time, a watermark, checkpoints.
 - A tweet that arrives later than the 30-minute watermark still gets a prediction but is left out of the window counts.
 - Changing `spark.sql.shuffle.partitions` requires deleting the checkpoint first (`docker compose down -v`), because a checkpoint keeps the number of partitions it was created with.
-- The benchmark runs on a single GitHub Actions runner with nothing else competing for it, so it will not describe behaviour under concurrent load.
+- The benchmark is a burst on a single 2-vCPU GitHub Actions runner with nothing else running. Its 3 micro-batches took a median of 6122.0 ms, longer than the 5-second trigger, so the latency it reports is mostly the time to work off a backlog. It is not the latency at a steady, slower rate, where the wait for the next trigger matters more and which this benchmark does not measure, and it says nothing about behaviour under concurrent load.
 - The dashboard only flags a window as above the threshold when it has at least 20 tweets. Only the airlines with many tweets reach 20 tweets in an hour, so the flag mostly applies to them.
 - The dataset is licensed CC BY-NC-SA 4.0: non-commercial use only, share-alike.
 
