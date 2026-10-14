@@ -1,18 +1,7 @@
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
-venv/
-.venv/
-build/
-dist/
-.git/
-.gitignore
-.DS_Store
-*.ipynb_checkpoints/
-# Keep models to bake trained artifact into image
-# models/
-# Exclude large local datasets
-sentimentdataset.csv
+.git
+.venv
+checkpoints
+mlruns
+**/__pycache__
+**/*.pyc
+.pytest_cache

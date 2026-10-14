@@ -1,0 +1,5 @@
+# Keep the raw download byte-identical so its recorded sha256 stays valid.
+data/raw/*.csv -text
+
+# Shell scripts must keep LF endings to run in bash.
+*.sh text eol=lf

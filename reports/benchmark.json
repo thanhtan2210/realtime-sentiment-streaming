@@ -1,0 +1,211 @@
+{
+  "note": "One-off measurements of the machine described in each section; they are not reproducible to the digit. See scripts/benchmark_stream.py and scripts/benchmark_udf.py.",
+  "streaming": {
+    "measured_at_utc": "2026-10-13T07:50:43Z",
+    "commit": "42fb31cf311d5f4d2f5428e805d1d1c381878a71",
+    "command": "python -m scripts.benchmark_stream ",
+    "machine": {
+      "nproc": 2,
+      "ram_total_gb": 7.8,
+      "ram_available_at_start_gb": 5.7,
+      "cpu_model": "INTEL(R) XEON(R) PLATINUM 8573C",
+      "os": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+      "inside_container": false,
+      "github_runner": true,
+      "github_runner_image": "ubuntu24"
+    },
+    "docker": {
+      "docker_version": "28.0.4",
+      "docker_memory_gb": 7.75,
+      "docker_cpus": 2,
+      "images": {
+        "dashboard": "realtime-sentiment-app",
+        "kafka": "apache/kafka:3.8.0",
+        "kafka-init": "apache/kafka:3.8.0",
+        "mongodb": "mongo:7",
+        "processor": "realtime-sentiment-spark",
+        "producer": "realtime-sentiment-app"
+      },
+      "container_memory_limits_mb": {
+        "dashboard": 512,
+        "kafka": 768,
+        "kafka-init": 256,
+        "mongodb": 512,
+        "processor": 2048,
+        "producer": 256
+      }
+    },
+    "versions": {
+      "python": "3.11.17",
+      "pyspark": "3.5.9",
+      "pyarrow": "17.0.0",
+      "pandas": "2.2.3",
+      "scikit-learn": "1.7.2",
+      "spark_connector_jars": [
+        "org.apache.spark_spark-sql-kafka-0-10_2.12-3.5.9.jar",
+        "org.apache.spark_spark-token-provider-kafka-0-10_2.12-3.5.9.jar",
+        "org.mongodb.spark_mongo-spark-connector_2.12-10.7.0.jar"
+      ],
+      "mongodb_server": "7.0.43"
+    },
+    "settings": {
+      "trigger": "5 seconds",
+      "window": "1 hour",
+      "watermark": "30 minutes",
+      "topic_partitions": 3,
+      "shuffle_partitions": 2
+    },
+    "warmup": {
+      "command": "docker compose run --rm producer --max-rate --limit 200 --run-id b20261013T074941warmup --time-shift-days -3",
+      "records": 200,
+      "included_in_the_results": false,
+      "time_shift_days": -3,
+      "first_send_to_last_write_seconds": 10.198
+    },
+    "load": {
+      "command": "docker compose run --rm --entrypoint sh producer -c \"python -m src.stream.producer --max-rate --run-id b20261013T074941r0 --time-shift-days 0 && python -m src.stream.producer --max-rate --run-id b20261013T074941r1 --time-shift-days 3 && python -m src.stream.producer --max-rate --run-id b20261013T074941r2 --time-shift-days 6 && python -m src.stream.producer --max-rate --run-id b20261013T074941r3 --time-shift-days 9 && python -m src.stream.producer --max-rate --run-id b20261013T074941r4 --time-shift-days 12\"",
+      "rounds": 5,
+      "records_per_round": 4196,
+      "time_shift_days_per_round": [
+        0,
+        3,
+        6,
+        9,
+        12
+      ],
+      "produce_seconds": 11.885
+    },
+    "checks": {
+      "timed_tweets_sent": 20980,
+      "window_total_added": 20980,
+      "window_total_equals_timed_tweets": true,
+      "rows_dropped_by_watermark": 0,
+      "no_rows_dropped_by_watermark": true,
+      "passed": true
+    },
+    "throughput": {
+      "records": 20980,
+      "first_send_to_last_write_seconds": 16.59,
+      "records_per_second": 1264.6
+    },
+    "latency_seconds": {
+      "to_written_at": {
+        "p50": 6.076,
+        "p95": 8.943,
+        "p99": 9.096,
+        "min": 4.522,
+        "max": 9.23
+      },
+      "to_mongodb_acknowledgement": {
+        "p50": 8.179,
+        "p95": 11.046,
+        "p99": 11.199,
+        "min": 6.017,
+        "max": 11.333
+      }
+    },
+    "definitions": {
+      "throughput": "records / (last written_at - first produced_at_ms)",
+      "produced_at_ms": "set by the producer just before it hands the message to the Kafka client",
+      "written_at": "set by the Spark driver after the model ran on the micro-batch, immediately before its MongoDB write starts",
+      "to_mongodb_acknowledgement": "written_at plus the time the batch's MongoDB write took (mongoWriteMs in the processor log)"
+    },
+    "predictions_query": {
+      "batches": 3,
+      "rows_per_batch": [
+        4196,
+        8392,
+        8392
+      ],
+      "duration_ms": {
+        "addBatch": {
+          "median_ms": 5805.0,
+          "p95_ms": 6166.8,
+          "total_ms": 16084
+        },
+        "triggerExecution": {
+          "median_ms": 6122.0,
+          "p95_ms": 6644.9,
+          "total_ms": 17126
+        }
+      },
+      "read_and_predict_ms_total": 9943,
+      "mongo_write_ms_total": 5575
+    },
+    "airline_windows_query": {
+      "batches": 3,
+      "input_rows": 20980,
+      "rows_dropped_by_watermark": 0,
+      "duplicates_dropped": 0,
+      "duration_ms": {
+        "addBatch": {
+          "median_ms": 5281.0,
+          "p95_ms": 6780.4,
+          "total_ms": 16332
+        },
+        "triggerExecution": {
+          "median_ms": 5879.0,
+          "p95_ms": 7103.0,
+          "total_ms": 17565
+        }
+      }
+    }
+  },
+  "udf_vs_pandas_udf": {
+    "measured_at_utc": "2026-10-13T07:51:54Z",
+    "commit": "42fb31cf311d5f4d2f5428e805d1d1c381878a71",
+    "command": "python -m scripts.benchmark_udf ",
+    "machine": {
+      "nproc": 2,
+      "ram_total_gb": 7.8,
+      "ram_available_at_start_gb": 6.1,
+      "cpu_model": "INTEL(R) XEON(R) PLATINUM 8573C",
+      "os": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.36",
+      "inside_container": true,
+      "github_runner": true,
+      "github_runner_image": "ubuntu24"
+    },
+    "what": "Spark batch job scoring every row with the sentiment model; output discarded (noop sink)",
+    "rows": 20980,
+    "test_tweets": 4196,
+    "rounds": 5,
+    "partitions": 2,
+    "spark_master": "local[2]",
+    "spark_driver_memory": "1g",
+    "arrow_max_records_per_batch": 10000,
+    "timed_runs_per_variant": 3,
+    "warmup_seconds": {
+      "udf": 11.533,
+      "pandas_udf": 0.69
+    },
+    "run_seconds": {
+      "udf": [
+        8.915,
+        8.597,
+        9.268
+      ],
+      "pandas_udf": [
+        1.028,
+        0.838,
+        0.595
+      ]
+    },
+    "median_seconds": {
+      "udf": 8.915,
+      "pandas_udf": 0.838
+    },
+    "median_rows_per_second": {
+      "udf": 2353,
+      "pandas_udf": 25036
+    },
+    "pandas_udf_speedup_over_udf": 10.64,
+    "versions": {
+      "python": "3.11.17",
+      "java": "17.0.20.1",
+      "pyspark": "3.5.9",
+      "pyarrow": "17.0.0",
+      "pandas": "2.2.3",
+      "scikit-learn": "1.7.2"
+    }
+  }
+}

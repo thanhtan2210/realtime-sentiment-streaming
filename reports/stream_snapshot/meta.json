@@ -1,0 +1,43 @@
+{
+  "recorded_at_utc": "2026-10-10T07:47:53Z",
+  "commit": "9d4ddd27a1762e4d662bac165d9fef4fa78fe4c8",
+  "command": "docker compose run --rm producer --speedup 600",
+  "speedup": 600,
+  "tweets_sent": 4196,
+  "records": {
+    "predictions": 4196,
+    "airline_windows": 198
+  },
+  "window_total": 4196,
+  "rows_dropped_by_watermark": 0,
+  "duplicates_dropped": 0,
+  "first_created_at": "2015-02-23T08:02:21+00:00",
+  "last_created_at": "2015-02-24T19:53:37+00:00",
+  "settings": {
+    "trigger": "5 seconds",
+    "window": "1 hour",
+    "watermark": "30 minutes"
+  },
+  "images": {
+    "dashboard": "realtime-sentiment-app",
+    "kafka": "apache/kafka:3.8.0",
+    "kafka-init": "apache/kafka:3.8.0",
+    "mongodb": "mongo:7",
+    "processor": "realtime-sentiment-spark",
+    "producer": "realtime-sentiment-app"
+  },
+  "versions": {
+    "python": "3.11.17",
+    "pyspark": "3.5.9",
+    "pyarrow": "17.0.0",
+    "pandas": "2.2.3",
+    "scikit-learn": "1.7.2",
+    "spark_connector_jars": [
+      "org.apache.spark_spark-sql-kafka-0-10_2.12-3.5.9.jar",
+      "org.apache.spark_spark-token-provider-kafka-0-10_2.12-3.5.9.jar",
+      "org.mongodb.spark_mongo-spark-connector_2.12-10.7.0.jar"
+    ],
+    "mongodb_server": "7.0.43"
+  },
+  "license": "CC BY-NC-SA 4.0 (contains tweet text; see data/raw/SOURCE.md)"
+}

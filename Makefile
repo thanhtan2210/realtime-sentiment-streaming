@@ -1,30 +1,35 @@
 PYTHON := python
 
-.PHONY: help train producer processor api dashboard compose-up
+.PHONY: help train test up replay dashboard down
 
 help:
 	@echo "Available targets:"
-	@echo "  make train       - Train model"
-	@echo "  make producer    - Run Kafka producer"
-	@echo "  make processor   - Run Spark processor"
-	@echo "  make api         - Run FastAPI"
-	@echo "  make dashboard   - Run Streamlit"
-	@echo "  make compose-up  - Start infra via docker-compose"
+	@echo "  make train    - Train the model and write models/metrics.json"
+	@echo "  make test     - Run the tests"
+	@echo "  make up       - Build and start Kafka, MongoDB, the Spark processor and the dashboard (localhost:8501)"
+	@echo "  make dashboard - Run the dashboard on the recorded snapshot, without Docker"
+	@echo "  make replay   - Replay the test tweets into Kafka (stack must be up)"
+	@echo "  make down     - Stop the stack and delete its data (Kafka log, MongoDB, checkpoints)"
+	@echo ""
+	@echo "After changing stream.spark.shuffle_partitions (or SPARK_SHUFFLE_PARTITIONS) run"
+	@echo "'make down' before 'make up': the checkpoint keeps the old number of partitions."
 
 train:
-	$(PYTHON) src/ml/train.py
+	$(PYTHON) -m src.ml.train
 
-producer:
-	$(PYTHON) src/ingestion/producer.py
+test:
+	$(PYTHON) -m pytest -q
 
-processor:
-	$(PYTHON) src/processing/processor.py
+up:
+	docker compose up -d --build
 
-api:
-	uvicorn src.api.main:app --reload --port 8000
+replay:
+	docker compose run --rm producer --speedup 600
 
 dashboard:
-	streamlit run src/dashboard/app.py
+	$(PYTHON) -m streamlit run app.py
 
-compose-up:
-	docker-compose up --build
+# Also the only way to apply a new stream.spark.shuffle_partitions: the
+# checkpoint volume fixes the number of state partitions it was created with.
+down:
+	docker compose down -v

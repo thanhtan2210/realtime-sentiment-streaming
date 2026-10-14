@@ -1,97 +1,146 @@
-version: '3.8'
+# Kafka (KRaft, one node) -> Spark Structured Streaming -> MongoDB.
+#
+#   docker compose up -d                              # kafka, mongodb, processor, dashboard
+#   docker compose run --rm producer --speedup 600    # replay the test tweets
+#   http://localhost:8501                             # the dashboard, live from MongoDB
+#   docker compose down -v                            # stop and delete all data
+#
+# Memory limits add up to about 4 GB (plus 256 MB while the producer runs).
+name: realtime-sentiment
 
 services:
-  # --- Message Broker (Kafka) ---
-  zookeeper:
-    image: bitnami/zookeeper:latest
-    container_name: zookeeper
-    ports:
-      - "2181:2181"
-    environment:
-      - ALLOW_ANONYMOUS_LOGIN=yes
-
   kafka:
-    image: bitnami/kafka:3.6
-    container_name: kafka
-    ports:
-      - "9092:9092"
+    image: apache/kafka:3.8.0
     environment:
-      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
-      - ALLOW_PLAINTEXT_LISTENER=yes
-      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
-    depends_on:
-      - zookeeper
-
-  # --- NoSQL Database (MongoDB) ---
-  mongodb:
-    image: mongo:latest
-    container_name: mongodb
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      CLUSTER_ID: 5L6g3nShT-eMCtK--X86sw
+      # PLAINTEXT is for the other containers, EXTERNAL for debugging from the host.
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # Topics are created by kafka-init, never implicitly.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
     ports:
-      - "27017:27017"
+      # Both loopback addresses: on Windows `localhost` resolves to ::1 first.
+      - "127.0.0.1:29092:29092"
+      - "[::1]:29092:29092"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      # A port check, not a Kafka CLI call: the CLI starts a second JVM
+      # inside this container's memory limit.
+      test: ["CMD-SHELL", "nc -z localhost 9092"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 15s
+    mem_limit: 768m
+
+  # One-shot: create the input topic, then exit.
+  kafka-init:
+    image: apache/kafka:3.8.0
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_HEAP_OPTS: -Xmx128m
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - >
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092
+        --create --if-not-exists --topic tweets --partitions 3 --replication-factor 1
+        && /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --describe --topic tweets
+    restart: "no"
+    mem_limit: 256m
+
+  mongodb:
+    image: mongo:7
+    command: ["mongod", "--bind_ip_all", "--wiredTigerCacheSizeGB", "0.25"]
+    ports:
+      - "127.0.0.1:27017:27017"
+      - "[::1]:27017:27017"
     volumes:
       - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 10s
+    mem_limit: 512m
 
-  # --- Stream Processing (Spark) ---
-  spark-master:
-    image: bitnami/spark:3.5
-    container_name: spark-master
-    environment:
-      - SPARK_MODE=master
-      - SPARK_RPC_AUTHENTICATION_ENABLED=no
-      - SPARK_RPC_ENCRYPTION_ENABLED=no
-      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
-      - SPARK_SSL_ENABLED=no
-    ports:
-      - "8080:8080"
-      - "7077:7077"
-
-  spark-worker:
-    image: bitnami/spark:3.5
-    container_name: spark-worker
-    environment:
-      - SPARK_MODE=worker
-      - SPARK_MASTER_URL=spark://spark-master:7077
-      - SPARK_WORKER_MEMORY=1G
-      - SPARK_WORKER_CORES=1
-      - SPARK_RPC_AUTHENTICATION_ENABLED=no
-      - SPARK_RPC_ENCRYPTION_ENABLED=no
-      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
-      - SPARK_SSL_ENABLED=no
+  processor:
+    build:
+      context: .
+      dockerfile: docker/spark.Dockerfile
+    image: realtime-sentiment-spark
+    command: ["python", "-m", "src.stream.processor"]
     depends_on:
-      - spark-master
-
-  # --- Machine Learning Tracking (MLflow) ---
-  mlflow:
-    image: python:3.11-slim
-    container_name: sentiment_mlflow
+      kafka-init:
+        condition: service_completed_successfully
+      mongodb:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      MONGODB_URI: mongodb://mongodb:27017
+      SPARK_MASTER: local[2]
+      SPARK_DRIVER_MEMORY: 1g
     volumes:
-      - ./mlruns:/mlruns
-    command: sh -c "pip install mlflow && mlflow server --host 0.0.0.0 --port 5000"
-    ports:
-      - "5000:5000"
+      - checkpoints:/app/checkpoints
+    mem_limit: 2048m
 
-  # --- FastAPI (Sẽ được cập nhật sau để đọc từ MongoDB) ---
-  api:
-    build: .
-    container_name: sentiment_api
-    ports:
-      - "8000:8000"
-    depends_on:
-      - mongodb
-    environment:
-      - MONGODB_URI=mongodb://mongodb:27017
-
-  # --- Real-time Dashboard (Streamlit) ---
   dashboard:
-    build: .
-    container_name: sentiment_dashboard
-    command: streamlit run dashboard.py --server.port 8501 --server.address 0.0.0.0
-    ports:
-      - "8501:8501"
+    build:
+      context: .
+      dockerfile: docker/app.Dockerfile
+    image: realtime-sentiment-app
+    command:
+      - streamlit
+      - run
+      - app.py
+      - --server.address=0.0.0.0
+      - --server.port=8501
+      - --server.headless=true
+      - --browser.gatherUsageStats=false
     depends_on:
-      - mongodb
+      mongodb:
+        condition: service_healthy
     environment:
-      - MONGODB_URI=mongodb://mongodb:27017
+      SENTIMENT_SOURCE: mongo
+      MONGODB_URI: mongodb://mongodb:27017
+    ports:
+      - "127.0.0.1:8501:8501"
+      - "[::1]:8501:8501"
+    mem_limit: 512m
+
+  # Not started by `docker compose up`. Run it with
+  #   docker compose run --rm producer [--speedup N | --max-rate] [--limit K] [--run-id ID]
+  producer:
+    profiles: ["replay"]
+    build:
+      context: .
+      dockerfile: docker/app.Dockerfile
+    image: realtime-sentiment-app
+    entrypoint: ["python", "-m", "src.stream.producer"]
+    command: ["--speedup", "600"]
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    mem_limit: 256m
 
 volumes:
+  kafka_data:
   mongo_data:
+  checkpoints:

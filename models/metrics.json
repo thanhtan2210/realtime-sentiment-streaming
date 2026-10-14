@@ -1,0 +1,469 @@
+{
+  "data": {
+    "raw_rows": 14640,
+    "rows_with_valid_label_and_text": 14640,
+    "duplicate_text_rows_removed": 216,
+    "duplicated_texts_with_conflicting_labels": 26,
+    "duplicate_tweet_id_rows_removed": 0,
+    "rows": 14424
+  },
+  "split": {
+    "test_start": "2015-02-23T00:00:00-08:00",
+    "test_share": 0.2909,
+    "train": {
+      "rows": 10228,
+      "first_tweet": "2015-02-17T07:36:05+00:00",
+      "last_tweet": "2015-02-23T07:58:41+00:00",
+      "label_counts": {
+        "negative": 6473,
+        "neutral": 2079,
+        "positive": 1676
+      }
+    },
+    "test": {
+      "rows": 4196,
+      "first_tweet": "2015-02-23T08:02:21+00:00",
+      "last_tweet": "2015-02-24T19:53:37+00:00",
+      "label_counts": {
+        "negative": 2607,
+        "neutral": 977,
+        "positive": 612
+      }
+    },
+    "texts_in_both_train_and_test": 0
+  },
+  "cv": {
+    "method": "TimeSeriesSplit",
+    "n_splits": 5,
+    "scoring": "macro_f1",
+    "results": [
+      {
+        "params": {
+          "clf__C": 0.1,
+          "clf__class_weight": null,
+          "tfidf__min_df": 2,
+          "tfidf__ngram_range": [
+            1,
+            1
+          ]
+        },
+        "mean_macro_f1": 0.485,
+        "std_macro_f1": 0.0821,
+        "fold_macro_f1": [
+          0.3376,
+          0.4684,
+          0.5548,
+          0.5667,
+          0.4974
+        ],
+        "rank": 11
+      },
+      {
+        "params": {
+          "clf__C": 0.1,
+          "clf__class_weight": null,
+          "tfidf__min_df": 2,
+          "tfidf__ngram_range": [
+            1,
+            2
+          ]
+        },
+        "mean_macro_f1": 0.4317,
+        "std_macro_f1": 0.0737,
+        "fold_macro_f1": [
+          0.3042,
+          0.405,
+          0.4941,
+          0.5101,
+          0.4453
+        ],
+        "rank": 12
+      },
+      {
+        "params": {
+          "clf__C": 0.1,
+          "clf__class_weight": "balanced",
+          "tfidf__min_df": 2,
+          "tfidf__ngram_range": [
+            1,
+            1
+          ]
+        },
+        "mean_macro_f1": 0.6865,
+        "std_macro_f1": 0.0241,
+        "fold_macro_f1": [
+          0.6445,
+          0.6884,
+          0.7082,
+          0.7116,
+          0.6799
+        ],
+        "rank": 8
+      },
+      {
+        "params": {
+          "clf__C": 0.1,
+          "clf__class_weight": "balanced",
+          "tfidf__min_df": 2,
+          "tfidf__ngram_range": [
+            1,
+            2
+          ]
+        },
+        "mean_macro_f1": 0.6887,
+        "std_macro_f1": 0.021,
+        "fold_macro_f1": [
+          0.6523,
+          0.6852,
+          0.7053,
+          0.7128,
+          0.6881
+        ],
+        "rank": 5
+      },
+      {
+        "params": {
+          "clf__C": 1.0,
+          "clf__class_weight": null,
+          "tfidf__min_df": 2,
+          "tfidf__ngram_range": [
+            1,
+            1
+          ]
+        },
+        "mean_macro_f1": 0.6849,
+        "std_macro_f1": 0.0355,
+        "fold_macro_f1": [
+          0.6189,
+          0.6906,
+          0.7181,
+          0.7133,
+          0.6835
+        ],
+        "rank": 9
+      },
+      {
+        "params": {
+          "clf__C": 1.0,
+          "clf__class_weight": null,
+          "tfidf__min_df": 2,
+          "tfidf__ngram_range": [
+            1,
+            2
+          ]
+        },
+        "mean_macro_f1": 0.6704,
+        "std_macro_f1": 0.038,
+        "fold_macro_f1": [
+          0.6024,
+          0.6591,
+          0.7078,
+          0.7006,
+          0.6821
+        ],
+        "rank": 10
+      },
+      {
+        "params": {
+          "clf__C": 1.0,
+          "clf__class_weight": "balanced",
+          "tfidf__min_df": 2,
+          "tfidf__ngram_range": [
+            1,
+            1
+          ]
+        },
+        "mean_macro_f1": 0.7059,
+        "std_macro_f1": 0.0267,
+        "fold_macro_f1": [
+          0.6664,
+          0.7149,
+          0.7328,
+          0.732,
+          0.6833
+        ],
+        "rank": 3
+      },
+      {
+        "params": {
+          "clf__C": 1.0,
+          "clf__class_weight": "balanced",
+          "tfidf__min_df": 2,
+          "tfidf__ngram_range": [
+            1,
+            2
+          ]
+        },
+        "mean_macro_f1": 0.7186,
+        "std_macro_f1": 0.0216,
+        "fold_macro_f1": [
+          0.6826,
+          0.717,
+          0.7453,
+          0.7353,
+          0.7128
+        ],
+        "rank": 1
+      },
+      {
+        "params": {
+          "clf__C": 10.0,
+          "clf__class_weight": null,
+          "tfidf__min_df": 2,
+          "tfidf__ngram_range": [
+            1,
+            1
+          ]
+        },
+        "mean_macro_f1": 0.6875,
+        "std_macro_f1": 0.0226,
+        "fold_macro_f1": [
+          0.6493,
+          0.6914,
+          0.7176,
+          0.6984,
+          0.6809
+        ],
+        "rank": 6
+      },
+      {
+        "params": {
+          "clf__C": 10.0,
+          "clf__class_weight": null,
+          "tfidf__min_df": 2,
+          "tfidf__ngram_range": [
+            1,
+            2
+          ]
+        },
+        "mean_macro_f1": 0.6975,
+        "std_macro_f1": 0.0281,
+        "fold_macro_f1": [
+          0.6464,
+          0.6944,
+          0.7279,
+          0.717,
+          0.7018
+        ],
+        "rank": 4
+      },
+      {
+        "params": {
+          "clf__C": 10.0,
+          "clf__class_weight": "balanced",
+          "tfidf__min_df": 2,
+          "tfidf__ngram_range": [
+            1,
+            1
+          ]
+        },
+        "mean_macro_f1": 0.6874,
+        "std_macro_f1": 0.0238,
+        "fold_macro_f1": [
+          0.6466,
+          0.6934,
+          0.719,
+          0.6971,
+          0.6808
+        ],
+        "rank": 7
+      },
+      {
+        "params": {
+          "clf__C": 10.0,
+          "clf__class_weight": "balanced",
+          "tfidf__min_df": 2,
+          "tfidf__ngram_range": [
+            1,
+            2
+          ]
+        },
+        "mean_macro_f1": 0.7101,
+        "std_macro_f1": 0.0257,
+        "fold_macro_f1": [
+          0.663,
+          0.7081,
+          0.7387,
+          0.7252,
+          0.7154
+        ],
+        "rank": 2
+      }
+    ],
+    "best_params": {
+      "clf__C": 1.0,
+      "clf__class_weight": "balanced",
+      "tfidf__min_df": 2,
+      "tfidf__ngram_range": [
+        1,
+        2
+      ]
+    }
+  },
+  "test": {
+    "labels": [
+      "negative",
+      "neutral",
+      "positive"
+    ],
+    "baseline_predicts": "negative",
+    "baseline": {
+      "accuracy": 0.6213,
+      "macro_f1": 0.2555,
+      "f1_per_class": {
+        "negative": 0.7664,
+        "neutral": 0.0,
+        "positive": 0.0
+      },
+      "confusion_matrix": [
+        [
+          2607,
+          0,
+          0
+        ],
+        [
+          977,
+          0,
+          0
+        ],
+        [
+          612,
+          0,
+          0
+        ]
+      ],
+      "macro_f1_ci95": [
+        0.2519,
+        0.2591
+      ]
+    },
+    "model": {
+      "accuracy": 0.7691,
+      "macro_f1": 0.7107,
+      "f1_per_class": {
+        "negative": 0.855,
+        "neutral": 0.599,
+        "positive": 0.6781
+      },
+      "confusion_matrix": [
+        [
+          2214,
+          290,
+          103
+        ],
+        [
+          266,
+          578,
+          133
+        ],
+        [
+          92,
+          85,
+          435
+        ]
+      ],
+      "macro_f1_ci95": [
+        0.6945,
+        0.7276
+      ]
+    },
+    "macro_f1_difference": {
+      "value": 0.4552,
+      "ci95": [
+        0.4367,
+        0.4728
+      ]
+    },
+    "bootstrap": {
+      "method": "paired percentile",
+      "n_resamples": 1000,
+      "seed": 42
+    },
+    "by_airline": [
+      {
+        "airline": "American",
+        "n": 1608,
+        "label_counts": {
+          "negative": 1104,
+          "neutral": 300,
+          "positive": 204
+        },
+        "macro_f1": 0.7265,
+        "macro_f1_ci95": [
+          0.6978,
+          0.7528
+        ]
+      },
+      {
+        "airline": "Delta",
+        "n": 503,
+        "label_counts": {
+          "negative": 162,
+          "neutral": 235,
+          "positive": 106
+        },
+        "macro_f1": 0.6048,
+        "macro_f1_ci95": [
+          0.5616,
+          0.6498
+        ]
+      },
+      {
+        "airline": "Southwest",
+        "n": 453,
+        "label_counts": {
+          "negative": 217,
+          "neutral": 129,
+          "positive": 107
+        },
+        "macro_f1": 0.7195,
+        "macro_f1_ci95": [
+          0.6751,
+          0.7636
+        ]
+      },
+      {
+        "airline": "US Airways",
+        "n": 664,
+        "label_counts": {
+          "negative": 492,
+          "neutral": 114,
+          "positive": 58
+        },
+        "macro_f1": 0.7167,
+        "macro_f1_ci95": [
+          0.6659,
+          0.7589
+        ]
+      },
+      {
+        "airline": "United",
+        "n": 849,
+        "label_counts": {
+          "negative": 591,
+          "neutral": 156,
+          "positive": 102
+        },
+        "macro_f1": 0.6798,
+        "macro_f1_ci95": [
+          0.6418,
+          0.717
+        ]
+      },
+      {
+        "airline": "Virgin America",
+        "n": 119,
+        "label_counts": {
+          "negative": 41,
+          "neutral": 43,
+          "positive": 35
+        },
+        "macro_f1": 0.7249,
+        "macro_f1_ci95": [
+          0.6396,
+          0.8005
+        ]
+      }
+    ]
+  }
+}

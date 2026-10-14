@@ -1,0 +1,63 @@
+# Settings for src.ml.data and src.ml.train.
+
+split:
+  # Tweets created at or after this instant are the test set; everything
+  # before it is the training set. All timestamps in the raw file are -08:00.
+  # Chosen from the tweets-per-day counts only (the last two days hold about
+  # 29% of the de-duplicated tweets), not from any model score.
+  test_start: "2015-02-23T00:00:00-08:00"
+
+cv:
+  # TimeSeriesSplit over the time-ordered training set; selection metric is macro-F1.
+  n_splits: 5
+  grid:
+    tfidf__ngram_range: [[1, 1], [1, 2]]
+    tfidf__min_df: [2]
+    clf__C: [0.1, 1.0, 10.0]
+    clf__class_weight: [null, balanced]
+
+bootstrap:
+  n_resamples: 1000
+
+seed: 42
+
+# Settings for src.stream. The name after "env:" is an environment variable
+# that overrides the value; docker-compose.yml uses them for the addresses.
+stream:
+  kafka:
+    bootstrap_servers: localhost:29092   # env: KAFKA_BOOTSTRAP_SERVERS
+    topic: tweets                        # env: KAFKA_TOPIC
+  mongodb:
+    uri: mongodb://localhost:27017       # env: MONGODB_URI
+    database: sentiment                  # env: MONGODB_DATABASE
+    predictions_collection: predictions
+    windows_collection: airline_windows
+  # Event-time aggregation per airline. Tweets arriving more than `watermark`
+  # behind the newest event time seen are left out of the window counts.
+  window: 1 hour                         # env: STREAM_WINDOW
+  watermark: 30 minutes                  # env: STREAM_WATERMARK
+  # How often a micro-batch starts. This sets most of the end-to-end latency.
+  trigger: 5 seconds                     # env: STREAM_TRIGGER
+  checkpoint_dir: checkpoints            # env: STREAM_CHECKPOINT_DIR
+  spark:
+    master: local[2]                     # env: SPARK_MASTER
+    driver_memory: 1g                    # env: SPARK_DRIVER_MEMORY
+    # spark.sql.shuffle.partitions: also the number of state-store partitions
+    # of the window query. Spark's default of 200 is far too many for one small
+    # node. A checkpoint keeps the value it was created with, so after changing
+    # this, delete the checkpoint volume (`docker compose down -v`).
+    shuffle_partitions: 2                # env: SPARK_SHUFFLE_PARTITIONS
+
+# Settings for the Streamlit dashboard (src.dashboard). SENTIMENT_SOURCE
+# (mongo, snapshot or auto) picks the data source at start-up.
+dashboard:
+  # A window is flagged in the table when it has at least `min_tweets` tweets
+  # and its share of negative tweets is above the threshold. Windows with fewer
+  # tweets are shown as "too few tweets" and drawn faded in the chart.
+  negative_share_threshold: 0.75
+  min_tweets: 20
+  refresh_seconds: 2
+  latest_tweets: 20
+  snapshot_dir: reports/stream_snapshot  # env: SENTIMENT_SNAPSHOT_DIR
+  # Replay mode: simulated seconds per real second (the first one is the default).
+  replay_speeds: [600, 1800, 3600]

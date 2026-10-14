@@ -1,123 +1,170 @@
-# Real-time Sentiment Analysis Pipeline
+# Airline tweet sentiment stream
 
-This project implements a high-performance, industrial-grade end-to-end sentiment analysis pipeline designed for real-time social media monitoring. It leverages a modern Big Data stack and follows advanced Data Engineering principles, including modular architecture, strict data validation, and vectorized processing.
+Right now, are each airline's customers talking positively or negatively?
 
-## Business Value and Use Cases
+## Live demo
 
-In a digital-first world, understanding public sentiment in real-time provides a significant competitive advantage. This pipeline is designed to solve several critical business challenges:
+TODO: link
 
-1. **Brand Reputation Management**: Instantly detect shifts in public sentiment towards a brand or product, allowing for immediate crisis intervention.
-2. **Customer Experience Optimization**: Identify dissatisfied customers in real-time to prioritize support tickets and improve Customer Satisfaction (CSAT) scores.
-3. **Market Trend Analysis**: Monitor the reception of new product launches or marketing campaigns as they happen across different regions and platforms.
-4. **Automated Moderation**: Flag high-intensity negative emotions (e.g., anger, bitterness) for human review or automated filtering.
+The demo replays a recorded run of the pipeline; it is not live Twitter data.
 
-## Technical Architecture
+![The dashboard replaying a recorded run](docs/images/dashboard.png)
 
-The system is built with a decoupled, modular architecture to ensure maximum scalability and fault tolerance.
+## Problem → Approach → Results
 
-### 1. Ingestion Layer (src/ingestion)
-The entry point of the system is a Kafka Producer that simulates high-frequency data streams. 
-- **Data Governance**: Utilizes Pydantic for runtime schema validation. Any record failing validation (e.g., missing text, invalid timestamp) is logged and skipped, preventing "poison pills" from entering the pipeline.
-- **Resilience**: Implements robust error handling to ensure continuous streaming even when encountering malformed source data.
+- **Problem.** A customer-care team wants to see, hour by hour, when the tweets aimed at an airline turn negative, while there is still time to react.
+- **Approach.** Tweets go through Kafka into a Spark Structured Streaming job. It labels each tweet negative, neutral or positive with a TF-IDF + logistic regression model and counts the labels per airline and hour. MongoDB stores both, and a Streamlit dashboard reads them.
+- **Data.** 14,640 labelled tweets about six US airlines from February 2015. The model is trained on the earlier days; the stream replays the last two days, which the model never saw.
+- **Model.** On those two days the model's macro-F1 is 0.7107 (95% CI 0.6945 to 0.7276), against 0.2555 for always answering "negative".
+- **Stream.** One recorded replay sent 4,196 tweets and produced 4,196 predictions and 198 airline-hour windows; the watermark dropped 0 rows.
+- **Consistency.** Stream predictions match the offline model on 4,196 of 4,196 tweets.
+- **Speed.** In a burst test the stack handled 1264.6 tweets per second with a median latency of 6.076 s from send to `written_at`, on a GitHub Actions runner (2 vCPU, 7.8 GB RAM); see [Benchmark](#benchmark).
 
-### 2. Stream Processing Layer (src/processing)
-The core logic resides in an Apache Spark Streaming application.
-- **Optimization (Vectorized Inference)**: Traditional Spark UDFs suffer from significant overhead due to row-by-row serialization between the JVM and Python. This project utilizes **Pandas UDFs (Vectorized UDFs)** which use **Apache Arrow** for zero-copy data transfer. This allows the model to process data in batches (vectors), utilizing NumPy-level speeds.
-- **State Management**: Implements Spark Checkpointing to ensure the pipeline can recover its state and offset position in the event of a system failure.
+## Results
 
-### 3. Storage and Serving Layer (src/api)
-- **Database**: MongoDB serves as the sink for the analytical results, providing a flexible schema for unstructured social media data and supporting rapid aggregation queries.
-- **API**: A FastAPI-based REST service exposes the processed data. It provides endpoints for retrieving live insights, historical statistics, and individual model predictions.
+### Model on the test set
 
-### 4. Visualization Layer (src/dashboard)
-- **Live Monitoring**: A Streamlit dashboard provides a real-time view of the data flowing through the system.
-- **Insights**: Visualizes sentiment distribution, geographical activity trends, and platform-specific engagement metrics.
+Source: `models/metrics.json`, written by `python -m src.ml.train`.
 
-### 5. MLOps and Lineage (src/ml)
-- **Experiment Tracking**: Integrated with MLflow to log training parameters, metrics, and serialized model artifacts.
-- **Model Pipeline**: Uses a scikit-learn pipeline (TF-IDF + Logistic Regression) trained on a rich dataset featuring over 30 emotional categories.
+The model is trained on 10,228 tweets and scored once on the 4,196 tweets created from 2015-02-23 (US Pacific time) onwards. Duplicate texts are removed before the split, and the hyper-parameters are chosen by time-ordered cross-validation on the training tweets only (best cross-validated macro-F1: 0.7186). Intervals are 95% paired-bootstrap intervals from 1,000 resamples.
 
-## Performance Benchmarking
+| | Accuracy | Macro-F1 [95% CI] | F1 negative | F1 neutral | F1 positive |
+| --- | --- | --- | --- | --- | --- |
+| Baseline: always "negative" | 0.6213 | 0.2555 [0.2519, 0.2591] | 0.7664 | 0.0000 | 0.0000 |
+| TF-IDF + logistic regression | 0.7691 | 0.7107 [0.6945, 0.7276] | 0.8550 | 0.5990 | 0.6781 |
+| Difference (model − baseline) | | 0.4552 [0.4367, 0.4728] | | | |
 
-The primary technical achievement of this project is the optimization of the inference engine. By migrating from Scalar UDFs to Vectorized Pandas UDFs, the system achieves near-production throughput on commodity hardware.
+### Macro-F1 by airline
 
-### Benchmark Results (5,000 Records)
-- **Scalar UDF (Row-by-Row)**: ~70.13 seconds (~71 records/sec)
-- **Pandas UDF (Vectorized)**: ~0.15 seconds (~33,300 records/sec)
-- **Performance Gain**: 478x faster
+Source: `models/metrics.json`, written by `python -m src.ml.train` (test set only).
 
-This optimization allows the system to scale to millions of messages per day without requiring a massive hardware footprint.
+| Airline | Test tweets | Macro-F1 [95% CI] |
+| --- | --- | --- |
+| American | 1,608 | 0.7265 [0.6978, 0.7528] |
+| Delta | 503 | 0.6048 [0.5616, 0.6498] |
+| Southwest | 453 | 0.7195 [0.6751, 0.7636] |
+| US Airways | 664 | 0.7167 [0.6659, 0.7589] |
+| United | 849 | 0.6798 [0.6418, 0.7170] |
+| Virgin America | 119 | 0.7249 [0.6396, 0.8005] |
 
-## Project Structure
+The airlines differ in their mix of labels (neutral is the largest class among Delta's and Virgin America's test tweets, negative among the others'), so this table is not a like-for-like comparison of airlines.
 
-- src/common: Shared utilities, centralized configuration, and structured logging.
-- src/ingestion: Data ingestion logic and Pydantic schema definitions.
-- src/processing: Spark Streaming jobs and vectorized inference logic.
-- src/api: FastAPI application and endpoint definitions.
-- src/dashboard: Streamlit visualization application.
-- src/ml: Model training, evaluation scripts, and MLflow integration.
-- data: Raw datasets and CSV storage.
-- models: Serialized model artifacts and performance metrics.
-- checkpoints: Spark Streaming recovery metadata.
+### Replay of the test set through the stack
 
-## Setup and Installation
+Source: `reports/stream_snapshot/meta.json`, written by `python -m scripts.export_snapshot` on a fresh stack (recorded on 2026-10-10 with `producer --speedup 600`).
 
-### Prerequisites
-- Python 3.10 or higher
-- Docker and Docker Compose
-- Java Runtime Environment (JRE) 17+
+| | |
+| --- | --- |
+| Tweets sent | 4,196 |
+| Predictions stored in MongoDB | 4,196 |
+| Airline-hour windows | 198 |
+| Sum of the window totals | 4,196 |
+| Rows dropped by the watermark | 0 |
 
-### 1. Environment Setup
-Clone the repository and install dependencies:
-```bash
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+### Stream predictions against the offline model
+
+Source: `reports/stream_consistency.json`, written by `python -m scripts.check_stream_consistency`.
+
+| | |
+| --- | --- |
+| Tweets in the recorded run | 4,196 |
+| Same label from the stream and from the offline model | 4,196 |
+| Accuracy of the stream's labels | 0.7691 |
+| Macro-F1 of the stream's labels | 0.7107 |
+| Labels assigned by the stream | 2,572 negative, 953 neutral, 671 positive |
+
+### Benchmark
+
+Source: `reports/benchmark.json`, measured by `.github/workflows/benchmark.yml`, which runs `scripts/benchmark_stream.py` and `scripts/benchmark_udf.py` (2026-10-13, commit `42fb31c`).
+
+Machine: one GitHub Actions runner, 2 vCPU, 7.8 GB RAM, INTEL(R) XEON(R) PLATINUM 8573C, Docker 28.0.4; trigger 5 seconds, 3 topic partitions, Spark limited to 2048 MB.
+
+**Streaming.** After an untimed warm-up, the whole test set was replayed 5 times at maximum rate: 20,980 tweets sent in 11.885 s.
+
+| | |
+| --- | --- |
+| Tweets | 20,980 |
+| First send to last write | 16.590 s |
+| Throughput | 1264.6 tweets per second |
+| Latency from send to `written_at`: p50 / p95 / p99 | 6.076 s / 8.943 s / 9.096 s |
+| Latency from send to MongoDB acknowledgement: p50 / p95 / p99 | 8.179 s / 11.046 s / 11.199 s |
+| Rows dropped by the watermark | 0 |
+
+Throughput is tweets divided by the time from the first send to the last write. `written_at` is stamped after the model has run on a micro-batch, just before its MongoDB write starts; the second latency adds the time that write took.
+
+**Micro-batches**, from Spark's `StreamingQueryProgress`:
+
+| Query | Micro-batches | `addBatch` median / p95 | `triggerExecution` median / p95 |
+| --- | --- | --- | --- |
+| predictions | 3 | 5805.0 ms / 6166.8 ms | 6122.0 ms / 6644.9 ms |
+| airline_windows | 3 | 5281.0 ms / 6780.4 ms | 5879.0 ms / 7103.0 ms |
+
+Only 3 micro-batches carried the load, so each p95 is close to the slowest batch.
+
+**`udf` against `pandas_udf`.** A Spark batch job scores 20,980 rows in 2 partitions with each variant, three timed runs after a warm-up:
+
+| Variant | Runs | Median | Rows per second |
+| --- | --- | --- | --- |
+| `udf`: one model call per row | 8.915 s, 8.597 s, 9.268 s | 8.915 s | 2,353 |
+| `pandas_udf`: one model call per Arrow batch | 1.028 s, 0.838 s, 0.595 s | 0.838 s | 25,036 |
+
+The median `pandas_udf` run took 10.64 times less time than the median `udf` run.
+
+## How it works
+
+```mermaid
+flowchart LR
+    P["Replay producer<br/>test-set tweets"] --> K["Kafka<br/>3 partitions, key = tweet_id"]
+    K --> S["Spark Structured Streaming<br/>pandas_udf model, 30 min watermark,<br/>dedupe, 1-hour windows"]
+    S --> M[("MongoDB<br/>predictions, airline_windows")]
+    M --> D["Streamlit<br/>live dashboard"]
+    M -.-> N["Snapshot<br/>reports/stream_snapshot"]
+    N --> C["Streamlit Cloud<br/>replay of the snapshot"]
 ```
 
-### 2. Infrastructure Deployment
-Launch the core services (Kafka, Zookeeper, MongoDB, Spark):
+![The dashboard while a replay is playing](docs/images/replay.gif)
+
+The dashboard has two modes and always says which one it is in: live from MongoDB when the stack is running, or a replay of the recorded run in `reports/stream_snapshot/` with a simulated clock, which is what the hosted demo shows.
+
+Tech stack:
+
+- Apache Kafka (KRaft, one node)
+- Spark Structured Streaming (PySpark)
+- MongoDB
+- scikit-learn (TF-IDF + logistic regression)
+- Streamlit
+- Docker Compose
+
+**Running a batch twice does not change the result.** Each prediction is stored under `_id = tweet_id` and each window under `_id = airline|window_start`, and both sinks replace the document with that id, so a re-run of a micro-batch overwrites instead of adding. A tweet delivered twice is still counted once in its window, because the window query calls `dropDuplicatesWithinWatermark` on `tweet_id` before it aggregates.
+
+## How to run
+
+Requires Python 3.11 (Spark 3.5) and Docker.
+
 ```bash
-docker-compose up -d
+docker compose up -d
+docker compose run --rm producer --speedup 600
+# open http://localhost:8501
+pytest -q
 ```
 
-### 3. Model Training
-Train the initial model and register it with MLflow:
-```bash
-make train
-```
+The first two commands start Kafka, MongoDB, the Spark job and the dashboard, then replay the test tweets at 600 times real speed. `pytest -q` needs the packages in `requirements-dev.txt`; the Spark tests are skipped when no Java runtime is installed. Without Docker, `streamlit run app.py` replays the recorded run.
 
-## Running the Pipeline
+## Limitations
 
-To run the full end-to-end pipeline, execute these commands in separate terminal sessions:
+- The data is from 2015 and covers 8 days; the test set is the last 2 of them. The scores say nothing about other periods or about tweets written today.
+- The neutral class is the weakest: its F1 is 0.5990.
+- The training and test days differ in their mix of airlines: American is the largest airline in the test set (1,608 of 4,196 tweets) but is under-represented in the training days.
+- The stream replays tweets that were collected long ago. Nothing here is connected to Twitter.
+- For this amount of data Spark is more machinery than the job needs; a single Python process would do. It is used here to show a streaming design: event time, a watermark, checkpoints.
+- A tweet that arrives later than the 30-minute watermark still gets a prediction but is left out of the window counts.
+- Changing `spark.sql.shuffle.partitions` requires deleting the checkpoint first (`docker compose down -v`), because a checkpoint keeps the number of partitions it was created with.
+- The benchmark is a burst on a single 2-vCPU GitHub Actions runner with nothing else running. Its 3 micro-batches took a median of 6122.0 ms, longer than the 5-second trigger, so the latency it reports is mostly the time to work off a backlog. It is not the latency at a steady, slower rate, where the wait for the next trigger matters more and which this benchmark does not measure, and it says nothing about behaviour under concurrent load.
+- The dashboard only flags a window as above the threshold when it has at least 20 tweets. Only the airlines with many tweets reach 20 tweets in an hour, so the flag mostly applies to them.
+- The dataset is licensed CC BY-NC-SA 4.0: non-commercial use only, share-alike.
 
-1. **Ingestion**: Start streaming data from the source to Kafka.
-   ```bash
-   make producer
-   ```
-2. **Processing**: Start the Spark Streaming engine.
-   ```bash
-   make processor
-   ```
-3. **Dashboard**: Launch the real-time monitoring tool.
-   ```bash
-   make dashboard
-   ```
-4. **API**: Start the backend service for external access.
-   ```bash
-   make api
-   ```
+## Authors and license
 
-## API Documentation
-
-The following REST endpoints are available (default port 8000):
-- GET /: Service status and health check.
-- GET /latest?limit=N: Retrieve the N most recent sentiment records.
-- GET /stats: Retrieve aggregated sentiment counts across the entire dataset.
-- POST /predict?text=...: Perform real-time inference on a single custom string.
-
-## Production Considerations
-
-- **Scalability**: The modular design allows Kafka brokers and Spark workers to be scaled horizontally.
-- **Fault Tolerance**: Spark Checkpointing and Kafka's distributed nature ensure no data loss during infrastructure outages.
-- **Monitoring**: Structured logging is implemented across all modules to facilitate debugging and observability in production environments.
+- Author: Phan Thanh Tan ([@thanhtan2210](https://github.com/thanhtan2210)).
+- Code: MIT, see [LICENSE](LICENSE).
+- Data: [Twitter US Airline Sentiment](https://www.kaggle.com/datasets/crowdflower/twitter-airline-sentiment) (Crowdflower / Figure Eight, "Data for Everyone"), CC BY-NC-SA 4.0. The download source, checksum and what the license covers are in [data/raw/SOURCE.md](data/raw/SOURCE.md). It also applies to `reports/stream_snapshot/` and to the screenshots in `docs/images/`, which contain or are derived from tweet text.
