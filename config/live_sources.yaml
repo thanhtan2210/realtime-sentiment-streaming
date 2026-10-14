@@ -1,0 +1,26 @@
+# Feasibility probe for a live data source (scripts/probe_bluesky.py).
+# Nothing in the pipeline, the producer or the dashboard reads this file.
+
+bluesky:
+  # Public Jetstream endpoints (no account needed); the probe moves to the next
+  # one when a connection fails.
+  endpoints:
+    - wss://jetstream2.us-east.bsky.network/subscribe?wantedCollections=app.bsky.feed.post
+    - wss://jetstream1.us-east.bsky.network/subscribe?wantedCollections=app.bsky.feed.post
+    - wss://jetstream1.us-west.bsky.network/subscribe?wantedCollections=app.bsky.feed.post
+    - wss://jetstream2.us-west.bsky.network/subscribe?wantedCollections=app.bsky.feed.post
+  # Posts whose `langs` contain this code (or a regional form such as en-US).
+  language: en
+  # A post whose own createdAt is further than this from Jetstream's time_us is counted.
+  created_at_tolerance_minutes: 5
+
+# Keywords per airline: case-insensitive, matched as whole words or handles.
+# Kept narrow on purpose, so that "the Mississippi delta", "United States" or
+# "American history" do not count.
+airlines:
+  United: ["united airlines", "@united", "united flight"]
+  American: ["american airlines", "@americanair", "aa flight"]
+  Delta: ["delta air lines", "delta airlines", "@delta", "delta flight"]
+  Southwest: ["southwest airlines", "@southwestair", "southwest flight"]
+  JetBlue: ["jetblue"]
+  Alaska: ["alaska airlines", "@alaskaair"]

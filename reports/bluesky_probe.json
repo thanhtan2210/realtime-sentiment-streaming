@@ -1,0 +1,101 @@
+{
+  "runs": [
+    {
+      "started_at_utc": "2026-10-14T04:22:31Z",
+      "ended_at_utc": "2026-10-14T05:22:42Z",
+      "minutes_requested": 60.0,
+      "minutes_actual": 60.17,
+      "connection": {
+        "endpoints_used": [
+          "wss://jetstream2.us-east.bsky.network/subscribe?wantedCollections=app.bsky.feed.post",
+          "wss://jetstream1.us-west.bsky.network/subscribe?wantedCollections=app.bsky.feed.post"
+        ],
+        "disconnects": 6,
+        "reconnects": 2,
+        "failed_connects": 0
+      },
+      "language": "en",
+      "keywords": {
+        "United": [
+          "united airlines",
+          "@united",
+          "united flight"
+        ],
+        "American": [
+          "american airlines",
+          "@americanair",
+          "aa flight"
+        ],
+        "Delta": [
+          "delta air lines",
+          "delta airlines",
+          "@delta",
+          "delta flight"
+        ],
+        "Southwest": [
+          "southwest airlines",
+          "@southwestair",
+          "southwest flight"
+        ],
+        "JetBlue": [
+          "jetblue"
+        ],
+        "Alaska": [
+          "alaska airlines",
+          "@alaskaair"
+        ]
+      },
+      "events": 101101,
+      "events_by_kind": {
+        "account": 846,
+        "commit": 99587,
+        "identity": 668
+      },
+      "create_posts": 94257,
+      "english_posts": 50404,
+      "matched_posts_by_airline": {
+        "United": 0,
+        "American": 0,
+        "Delta": 0,
+        "Southwest": 1,
+        "JetBlue": 0,
+        "Alaska": 0
+      },
+      "matched_posts": 1,
+      "matched_posts_per_hour_by_airline": {
+        "United": 0.0,
+        "American": 0.0,
+        "Delta": 0.0,
+        "Southwest": 1.0,
+        "JetBlue": 0.0,
+        "Alaska": 0.0
+      },
+      "matched_posts_per_hour": 1.0,
+      "source_lag": {
+        "receive_minus_created_at": {
+          "n": 50404,
+          "median_seconds": 0.669,
+          "p95_seconds": 9.545
+        },
+        "receive_minus_jetstream_time_us": {
+          "n": 50404,
+          "median_seconds": -0.249,
+          "p95_seconds": 0.024
+        },
+        "matched_receive_minus_created_at": {
+          "n": 1,
+          "median_seconds": 0.269,
+          "p95_seconds": 0.269
+        },
+        "matched_receive_minus_jetstream_time_us": {
+          "n": 1,
+          "median_seconds": -0.28,
+          "p95_seconds": -0.28
+        }
+      },
+      "created_at_unreadable": 0,
+      "created_at_more_than_tolerance_from_time_us": 126
+    }
+  ],
+  "note": "Counts and timings only; no post text, handle or DID is stored. Written by `python -m scripts.probe_bluesky`, one entry per run."
+}
