@@ -13,14 +13,66 @@ bluesky:
   language: en
   # A post whose own createdAt is further than this from Jetstream's time_us is counted.
   created_at_tolerance_minutes: 5
+  # SNTP server used to measure this machine's clock offset at the start and end of a run.
+  time_server: time.windows.com
 
-# Keywords per airline: case-insensitive, matched as whole words or handles.
-# Kept narrow on purpose, so that "the Mississippi delta", "United States" or
-# "American history" do not count.
-airlines:
-  United: ["united airlines", "@united", "united flight"]
-  American: ["american airlines", "@americanair", "aa flight"]
-  Delta: ["delta air lines", "delta airlines", "@delta", "delta flight"]
-  Southwest: ["southwest airlines", "@southwestair", "southwest flight"]
-  JetBlue: ["jetblue"]
-  Alaska: ["alaska airlines", "@alaskaair"]
+# Level 1: the post names an airline. Keywords are case-insensitive and matched
+# on whole words; "@handle" keywords also match "@handle.domain". A post also
+# counts when it mentions an official account in its facets (by DID).
+#
+# Official accounts, checked on 2026-10-14 with the public API
+# (app.bsky.actor.searchActors, app.bsky.actor.getProfile,
+# com.atproto.identity.resolveHandle). Accepted only when the handle is the
+# airline's own web domain, which Bluesky verifies, or the profile carries a
+# verification badge. No airline account had a badge.
+airline_strict:
+  United:
+    keywords: ["united airlines", "@united", "united flight"]
+    official_account: {handle: united.com, did: "did:plc:2ftfrpjqaivlsxnc37fzlfyk"}
+  American:
+    keywords: ["american airlines", "@americanair", "aa flight"]
+    # aa.com is not a Bluesky handle; americanair.bsky.social is neither the
+    # airline's domain nor verified.
+    official_account: none found
+  Delta:
+    keywords: ["delta air lines", "delta airlines", "@delta", "delta flight"]
+    # delta.com is not a Bluesky handle; deltaresponse.bsky.social is neither
+    # the airline's domain nor verified.
+    official_account: none found
+  Southwest:
+    keywords: ["southwest airlines", "@southwestair", "southwest flight"]
+    official_account: {handle: southwest.com, did: "did:plc:zsox2gbgymd7jh3qxvoly4u3"}
+  JetBlue:
+    keywords: ["jetblue"]
+    # jetblue.com is not a Bluesky handle; no account named JetBlue is the airline's.
+    official_account: none found
+  Alaska:
+    keywords: ["alaska airlines", "@alaskaair"]
+    # alaskaair.com is not a Bluesky handle; teamaag.bsky.social is neither
+    # the airline's domain nor verified.
+    official_account: none found
+
+# Level 2: the post is about flying. Same matching rules. A post matching both
+# levels is tagged with its airline; otherwise with "unspecified".
+air_travel:
+  - flight delayed
+  - flight was delayed
+  - delayed flight
+  - flight cancelled
+  - flight canceled
+  - cancelled my flight
+  - missed my flight
+  - missed connection
+  - lost luggage
+  - lost my luggage
+  - lost baggage
+  - checked bag
+  - baggage claim
+  - tsa line
+  - tsa precheck
+  - gate agent
+  - flight attendant
+  - boarding pass
+  - layover
+  - on the tarmac
+  - my flight
