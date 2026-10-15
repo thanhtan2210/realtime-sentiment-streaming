@@ -16,6 +16,10 @@ printed to the screen, and --sample-csv writes a random sample of `air_travel`
 matches (text only, other people's handles masked) to a file that should be kept
 outside the repository, for a manual check of the filter.
 
+It starts at once and needs only a network connection: it does not wait for a
+time of day and does not check what else runs on the machine (those checks
+belong to the benchmark, which this script does not touch).
+
 This is a probe. The pipeline, the producer and the dashboard do not use it.
 """
 import argparse
