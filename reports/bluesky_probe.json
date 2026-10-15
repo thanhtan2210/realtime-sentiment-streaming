@@ -95,7 +95,190 @@
       },
       "created_at_unreadable": 0,
       "created_at_more_than_tolerance_from_time_us": 126
+    },
+    {
+      "started_at_utc": "2026-10-15T16:08:34Z",
+      "ended_at_utc": "2026-10-15T17:08:35Z",
+      "minutes_requested": 60.0,
+      "minutes_actual": 60.01,
+      "runner": "local",
+      "os": "Windows-10-10.0.26300-SP0",
+      "github_runner_image": null,
+      "clock": {
+        "time_server": "time.windows.com",
+        "offset_seconds_at_start": 1.058,
+        "offset_seconds_at_end": 0.742,
+        "meaning": "seconds to add to this machine's clock to get the time server's"
+      },
+      "connection": {
+        "endpoints_used": [
+          "wss://jetstream2.us-east.bsky.network/subscribe?wantedCollections=app.bsky.feed.post"
+        ],
+        "connections_dropped": 0,
+        "reconnects": 0,
+        "connection_attempts_failed": 0
+      },
+      "language": "en",
+      "keywords": {
+        "airline_strict": {
+          "United": [
+            "united airlines",
+            "@united",
+            "united flight",
+            "@united.com"
+          ],
+          "American": [
+            "american airlines",
+            "@americanair",
+            "aa flight"
+          ],
+          "Delta": [
+            "delta air lines",
+            "delta airlines",
+            "@delta",
+            "delta flight"
+          ],
+          "Southwest": [
+            "southwest airlines",
+            "@southwestair",
+            "southwest flight",
+            "@southwest.com"
+          ],
+          "JetBlue": [
+            "jetblue"
+          ],
+          "Alaska": [
+            "alaska airlines",
+            "@alaskaair"
+          ]
+        },
+        "airline_strict_official_dids_used": 2,
+        "air_travel": [
+          "flight delayed",
+          "flight was delayed",
+          "delayed flight",
+          "flight cancelled",
+          "flight canceled",
+          "cancelled my flight",
+          "missed my flight",
+          "missed connection",
+          "lost luggage",
+          "lost my luggage",
+          "lost baggage",
+          "checked bag",
+          "baggage claim",
+          "tsa line",
+          "tsa precheck",
+          "gate agent",
+          "flight attendant",
+          "boarding pass",
+          "layover",
+          "on the tarmac",
+          "my flight"
+        ]
+      },
+      "events": 193969,
+      "events_by_kind": {
+        "account": 1177,
+        "commit": 191723,
+        "identity": 1069
+      },
+      "create_posts": 181506,
+      "english_posts": 113319,
+      "english_posts_per_hour": 113297.9,
+      "airline_strict": {
+        "matched_posts": 7,
+        "matched_posts_per_hour": 7.0,
+        "matched_posts_by_airline": {
+          "United": 2,
+          "American": 2,
+          "Delta": 0,
+          "Southwest": 1,
+          "JetBlue": 2,
+          "Alaska": 0
+        },
+        "matched_posts_per_hour_by_airline": {
+          "United": 2.0,
+          "American": 2.0,
+          "Delta": 0.0,
+          "Southwest": 1.0,
+          "JetBlue": 2.0,
+          "Alaska": 0.0
+        },
+        "matched_only_through_a_mention_facet": 0
+      },
+      "air_travel": {
+        "matched_posts": 10,
+        "matched_posts_per_hour": 10.0,
+        "matched_posts_by_airline_or_unspecified": {
+          "United": 0,
+          "American": 0,
+          "Delta": 0,
+          "Southwest": 0,
+          "JetBlue": 0,
+          "Alaska": 0,
+          "unspecified": 10
+        },
+        "matched_posts_per_hour_by_airline_or_unspecified": {
+          "United": 0.0,
+          "American": 0.0,
+          "Delta": 0.0,
+          "Southwest": 0.0,
+          "JetBlue": 0.0,
+          "Alaska": 0.0,
+          "unspecified": 10.0
+        },
+        "matched_posts_by_first_phrase": {
+          "flight delayed": 0,
+          "flight was delayed": 0,
+          "delayed flight": 0,
+          "flight cancelled": 0,
+          "flight canceled": 0,
+          "cancelled my flight": 0,
+          "missed my flight": 0,
+          "missed connection": 0,
+          "lost luggage": 0,
+          "lost my luggage": 0,
+          "lost baggage": 0,
+          "checked bag": 2,
+          "baggage claim": 0,
+          "tsa line": 0,
+          "tsa precheck": 0,
+          "gate agent": 0,
+          "flight attendant": 1,
+          "boarding pass": 0,
+          "layover": 3,
+          "on the tarmac": 0,
+          "my flight": 4
+        },
+        "also_airline_strict": 0
+      },
+      "source_lag": {
+        "clock_offset_applied_seconds": 0.9,
+        "receive_minus_created_at": {
+          "n": 113319,
+          "median_seconds": 0.244,
+          "p95_seconds": 6.267
+        },
+        "receive_minus_jetstream_time_us": {
+          "n": 113319,
+          "median_seconds": -0.536,
+          "p95_seconds": -0.475
+        },
+        "receive_minus_created_at_corrected": {
+          "n": 113319,
+          "median_seconds": 1.144,
+          "p95_seconds": 7.167
+        },
+        "receive_minus_jetstream_time_us_corrected": {
+          "n": 113319,
+          "median_seconds": 0.364,
+          "p95_seconds": 0.425
+        }
+      },
+      "created_at_unreadable": 0,
+      "created_at_more_than_tolerance_from_time_us": 289
     }
   ],
-  "note": "Counts and timings only; no post text, handle or DID is stored. Written by `python -m scripts.probe_bluesky`, one entry per run."
+  "note": "Counts and timings only; no post text, handle or DID is stored. Written by `python -m scripts.probe_bluesky`, one entry per run. The first run was written by an earlier version: one keyword level only, no clock offset, and `disconnects` counted every failure after the first connection, including reconnection attempts that never opened."
 }
