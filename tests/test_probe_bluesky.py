@@ -17,6 +17,7 @@ from scripts.probe_bluesky import (
     main,
     mask_handles,
     mentioned_dids,
+    runner_info,
     write_sample,
 )
 
@@ -249,3 +250,26 @@ def test_the_review_sample_may_not_be_written_inside_the_repository(monkeypatch)
     monkeypatch.setattr("sys.argv", ["probe_bluesky", "--minutes", "0", "--sample-csv", inside])
     with pytest.raises(SystemExit):
         main()
+
+
+def test_a_sample_path_outside_the_repository_is_accepted(monkeypatch, tmp_path):
+    """Like $RUNNER_TEMP on GitHub Actions: outside the checkout, so allowed."""
+    calls = []
+    monkeypatch.setattr("scripts.probe_bluesky.asyncio.run", lambda coro: calls.append(coro.close()) or {})
+    monkeypatch.setattr("scripts.probe_bluesky.clock_offset", lambda server: None)
+    output, sample = tmp_path / "probe.json", tmp_path / "runner_temp" / "bluesky_sample.csv"
+    monkeypatch.setattr(
+        "sys.argv",
+        ["probe_bluesky", "--minutes", "0", "--output", str(output), "--sample-csv", str(sample)],
+    )
+    assert main() == 0
+    run = json.loads(output.read_text(encoding="utf-8"))["runs"][0]
+    assert run["runner"] in {"local", "github-actions"} and run["os"]
+    assert sample.exists()
+
+
+def test_runner_info_tells_github_actions_from_this_machine():
+    assert runner_info({"GITHUB_ACTIONS": "true", "ImageOS": "ubuntu24"})["runner"] == "github-actions"
+    assert runner_info({"GITHUB_ACTIONS": "true", "ImageOS": "ubuntu24"})["github_runner_image"] == "ubuntu24"
+    local = runner_info({})
+    assert local["runner"] == "local" and local["github_runner_image"] is None and local["os"]

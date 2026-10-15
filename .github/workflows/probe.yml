@@ -1,0 +1,59 @@
+name: Bluesky probe
+
+# Feasibility probe for a live data source: listens to the public Bluesky
+# Jetstream for 60 minutes and counts posts about airlines and about flying
+# (scripts/probe_bluesky.py). It does not commit or push. The counts come back
+# as an artifact; the post sample is a separate, short-lived artifact.
+#
+# Run it by hand (workflow_dispatch), or push a branch named probe/<anything>.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "probe/**"
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # The run is meant for US morning hours; outside them it still runs, with a warning.
+      - name: Start time
+        run: |
+          echo "Probe starts at $(date -u +%Y-%m-%dT%H:%M:%SZ) (UTC)"
+          hour=$((10#$(date -u +%H)))
+          if [ "$hour" -lt 13 ] || [ "$hour" -ge 17 ]; then
+            echo "::warning::The probe starts outside the 13:00-17:00 UTC window (US morning); counts will not be comparable with a run inside it."
+          fi
+
+      # The sample holds post text, so it is written outside the checkout.
+      - name: Probe Bluesky for 60 minutes
+        run: python -m scripts.probe_bluesky --minutes 60 --sample-csv "$RUNNER_TEMP/bluesky_sample.csv"
+
+      - name: Upload the counts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: probe-report
+          path: reports/bluesky_probe.json
+          retention-days: 30
+
+      - name: Upload the post sample
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: probe-sample
+          path: ${{ runner.temp }}/bluesky_sample.csv
+          retention-days: 3
+          if-no-files-found: warn

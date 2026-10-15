@@ -23,6 +23,7 @@ import asyncio
 import csv
 import json
 import os
+import platform
 import random
 import re
 import socket
@@ -132,6 +133,15 @@ def parse_created_at(value) -> float | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.timestamp()
+
+
+def runner_info(env=os.environ) -> dict:
+    """Where the probe ran: a GitHub Actions runner or this machine, and its OS."""
+    return {
+        "runner": "github-actions" if env.get("GITHUB_ACTIONS") == "true" else "local",
+        "os": platform.platform(),
+        "github_runner_image": env.get("ImageOS"),
+    }
 
 
 def clock_offset(server: str, timeout: float = 5.0) -> float | None:
@@ -261,25 +271,28 @@ class ProbeStats:
         hours = minutes / 60
         shift = offset or 0.0
 
-        def per_hour(counts: dict[str, int]) -> dict[str, float]:
-            return {key: round(count / hours, 1) for key, count in counts.items()}
+        def rate(count: int) -> float | None:
+            return round(count / hours, 1) if hours > 0 else None  # a run that ended at once
+
+        def per_hour(counts: dict[str, int]) -> dict[str, float | None]:
+            return {key: rate(count) for key, count in counts.items()}
 
         return {
             "events": self.events,
             "events_by_kind": dict(sorted(self.events_by_kind.items())),
             "create_posts": self.creates,
             "english_posts": self.language_posts,
-            "english_posts_per_hour": round(self.language_posts / hours, 1),
+            "english_posts_per_hour": rate(self.language_posts),
             "airline_strict": {
                 "matched_posts": self.strict_posts,
-                "matched_posts_per_hour": round(self.strict_posts / hours, 1),
+                "matched_posts_per_hour": rate(self.strict_posts),
                 "matched_posts_by_airline": self.strict_by_airline,
                 "matched_posts_per_hour_by_airline": per_hour(self.strict_by_airline),
                 "matched_only_through_a_mention_facet": self.strict_via_mention_facet,
             },
             "air_travel": {
                 "matched_posts": self.travel_posts,
-                "matched_posts_per_hour": round(self.travel_posts / hours, 1),
+                "matched_posts_per_hour": rate(self.travel_posts),
                 "matched_posts_by_airline_or_unspecified": self.travel_by_airline,
                 "matched_posts_per_hour_by_airline_or_unspecified": per_hour(self.travel_by_airline),
                 "matched_posts_by_first_phrase": self.travel_by_phrase,
@@ -422,6 +435,7 @@ def main() -> int:
         "ended_at_utc": ended_wall.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "minutes_requested": args.minutes,
         "minutes_actual": round(minutes, 2),
+        **runner_info(),
         "clock": {
             "time_server": server,
             "offset_seconds_at_start": offset_start,
