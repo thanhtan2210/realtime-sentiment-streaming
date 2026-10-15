@@ -314,11 +314,20 @@ class ProbeStats:
         }
 
 
-def show(airline: str, text: str, shown: dict[str, int]) -> None:
-    """Print a matching post's text (never stored) for the first few matches of each airline."""
-    if shown[airline] < SHOWN_PER_AIRLINE:
-        shown[airline] += 1
-        print(f"[{airline} {shown[airline]}/{SHOWN_PER_AIRLINE}] {' '.join(text.split())[:240]}", flush=True)
+def show(airline: str, text: str, shown: dict[str, int], stream=None) -> None:
+    """Print a matching post's text (never stored) for the first few matches of each airline.
+
+    Printing must never stop a run: characters the console cannot show (emoji
+    on a Windows code page, for example) are replaced.
+    """
+    if shown[airline] >= SHOWN_PER_AIRLINE:
+        return
+    shown[airline] += 1
+    stream = stream or sys.stdout
+    line = f"[{airline} {shown[airline]}/{SHOWN_PER_AIRLINE}] {' '.join(text.split())[:240]}"
+    encoding = getattr(stream, "encoding", None) or "utf-8"
+    stream.write(line.encode(encoding, errors="replace").decode(encoding, errors="replace") + "\n")
+    stream.flush()
 
 
 async def listen(cfg, minutes, stats, airlines, travel, sample, keep_handles) -> dict:

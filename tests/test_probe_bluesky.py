@@ -18,6 +18,7 @@ from scripts.probe_bluesky import (
     mask_handles,
     mentioned_dids,
     runner_info,
+    show,
     write_sample,
 )
 
@@ -273,3 +274,19 @@ def test_runner_info_tells_github_actions_from_this_machine():
     assert runner_info({"GITHUB_ACTIONS": "true", "ImageOS": "ubuntu24"})["github_runner_image"] == "ubuntu24"
     local = runner_info({})
     assert local["runner"] == "local" and local["github_runner_image"] is None and local["os"]
+
+
+def test_printing_a_post_never_stops_the_run_on_a_narrow_console():
+    """A Windows console (cp1252) cannot show emoji; the line is printed with replacements instead."""
+    import io
+
+    console = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
+    shown = {"United": 0}
+    show("United", "@united lost my bag 😭✈️ again", shown, stream=console)
+    console.flush()
+    printed = console.buffer.getvalue().decode("cp1252")
+    assert printed.startswith("[United 1/5] @united lost my bag ")
+    assert printed.rstrip().endswith("again") and shown["United"] == 1
+    for _ in range(10):
+        show("United", "more", shown, stream=console)
+    assert shown["United"] == 5  # at most five per airline
