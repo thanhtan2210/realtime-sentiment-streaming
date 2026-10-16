@@ -176,12 +176,17 @@ def drop_repeated_posts(posts: DataFrame, watermark: str) -> DataFrame:
 
 
 def live_prediction_documents(predictions: DataFrame) -> DataFrame:
-    """One MongoDB document per post; `_id` is post_id. `written_at` is added by the writer."""
+    """One MongoDB document per post; `_id` is post_id. `written_at` is added by the writer.
+
+    The three times for the latencies: `created_at` (the post's own createdAt),
+    `received_at_ms` (when the producer read it) and `written_at`.
+    """
     return predictions.select(
         F.col("post_id").alias("_id"),
         "topic",
         "text",
         "sentiment",
+        F.to_timestamp("created_at").alias("created_at"),
         "event_time",
         "received_at_ms",
         "produced_at_ms",

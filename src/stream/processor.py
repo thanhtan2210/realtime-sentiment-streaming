@@ -10,7 +10,8 @@ mode, two queries read the same topic, each with its own checkpoint:
   airline_windows  label counts per airline and event-time window, `_id` = airline|window_start;
                    a tweet delivered twice within the watermark is counted once
 Live mode has the same two queries on its own topic, collections and checkpoints:
-  live_predictions one document per post, `_id` = post_id, written once per post_id
+  live_predictions one document per post, `_id` = post_id, written once per post_id;
+                   created_at, received_at_ms and written_at give the three latencies
   live_windows     label counts per topic and event-time window plus a row `all`,
                    `_id` = topic|window_start
 

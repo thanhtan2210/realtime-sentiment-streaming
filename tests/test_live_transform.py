@@ -78,8 +78,11 @@ def test_live_prediction_documents_are_one_per_post(kafka_records):
     messages, records = kafka_records
     posts = drop_repeated_posts(parse_live_messages(records), "2 minutes")
     documents = live_prediction_documents(with_sentiment(posts))
-    assert documents.columns == ["_id", "topic", "text", "sentiment", "event_time", "received_at_ms", "produced_at_ms"]
+    assert documents.columns == [
+        "_id", "topic", "text", "sentiment", "created_at", "event_time", "received_at_ms", "produced_at_ms"
+    ]
     rows = documents.collect()
+    assert all(as_utc(r["created_at"]) == datetime(2027, 1, 15, 8, 0, tzinfo=timezone.utc) for r in rows)
     assert sorted(r["_id"] for r in rows) == sorted(m["post_id"] for m in messages)
     assert {r["sentiment"] for r in rows} <= set(LABELS)
     assert {r["topic"] for r in rows} == {"airline:United", "air_travel", "general"}
@@ -162,3 +165,9 @@ def test_streaming_live_query_counts_a_reread_post_once(spark, tmp_path):
     assert latest["air_travel|2027-01-15T08:00:00Z"]["total"] == 1
     assert latest["general|2027-01-15T08:00:00Z"]["total"] == 1
     assert latest["all|2027-01-15T08:00:00Z"]["total"] == 2
+
+
+def test_live_report_uses_the_same_all_row_name():
+    from scripts.live_report import ALL_TOPICS as REPORT_ALL_TOPICS
+
+    assert REPORT_ALL_TOPICS == ALL_TOPICS
