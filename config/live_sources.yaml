@@ -16,6 +16,12 @@ bluesky:
   created_at_tolerance_minutes: 5
   # SNTP server used to measure this machine's clock offset at the start and end of a run.
   time_server: time.windows.com
+  # Live producer: leave an endpoint whose median source lag (received_at minus
+  # the post's createdAt, per minute) stays above this for this many minutes in
+  # a row; after a switch, wait at least the cooldown before switching again.
+  source_lag_switch_seconds: 30
+  source_lag_switch_after_minutes: 2
+  endpoint_switch_cooldown_minutes: 5
 
 # Level 1: the post names an airline. Keywords are case-insensitive and matched
 # on whole words; "@handle" keywords also match "@handle.domain". A post also

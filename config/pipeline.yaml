@@ -64,7 +64,6 @@ live:
     cursor_rewind_seconds: 5
     cursor_save_seconds: 5
     backoff_cap_seconds: 60
-    log_every_seconds: 60
   mongodb:
     uri: mongodb://localhost:27017       # env: MONGODB_URI
     database: sentiment                  # env: MONGODB_DATABASE

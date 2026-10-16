@@ -35,7 +35,6 @@ SOURCE_CFG = {
     "cursor_rewind_seconds": 5,
     "cursor_save_seconds": 0,  # flush and save after every event
     "backoff_cap_seconds": 0.01,
-    "log_every_seconds": 3600,
 }
 
 
