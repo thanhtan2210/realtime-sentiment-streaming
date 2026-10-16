@@ -1,0 +1,134 @@
+# One live-mode run on a GitHub-hosted runner: English Bluesky posts for 45
+# minutes (5 of warm-up, 40 measured), then the run report and a random sample
+# of posts for manual labeling. Results are uploaded as artifacts only: this
+# workflow does not commit or push anything.
+#
+# Start it by pushing a branch named live/<anything>, or from the Actions tab.
+name: Live run
+
+on:
+  push:
+    branches: ["live/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-run
+  cancel-in-progress: false
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      # The runner cannot bind the [::1] ports of docker-compose.yml.
+      COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
+      RUN_MINUTES: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      # The report and the sample read MongoDB from the runner.
+      - run: pip install -r requirements.txt
+
+      - name: Build images
+        run: docker compose --profile live build ingest-live processor-live
+
+      - name: Start live mode
+        run: docker compose --profile live up -d kafka mongodb ingest-live processor-live
+
+      - name: Wait for the processor's queries
+        run: |
+          for _ in $(seq 60); do
+            if docker compose --profile live logs --no-log-prefix processor-live | grep -q "Query started: live_windows"; then
+              exit 0
+            fi
+            if [ "$(docker compose --profile live ps -a --format '{{.State}}' processor-live)" != "running" ]; then
+              echo "The processor is not running"
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "The processor did not start its queries within 5 minutes"
+          exit 1
+
+      - name: Run for ${{ env.RUN_MINUTES }} minutes
+        run: |
+          end=$(( $(date +%s) + RUN_MINUTES * 60 ))
+          while [ "$(date +%s)" -lt "$end" ]; do
+            sleep 60
+            for service in ingest-live processor-live; do
+              if [ "$(docker compose --profile live ps -a --format '{{.State}}' "$service")" != "running" ]; then
+                echo "$service stopped early"
+                exit 1
+              fi
+            done
+            # the producer's per-minute line: counts, lag and topics, no post text
+            docker compose --profile live logs --no-log-prefix --since 65s ingest-live | grep -E "LIVE |Switching|lost or refused" || true
+          done
+
+      # `docker compose stop` sends SIGTERM: the producer flushes, saves its
+      # cursor and logs LIVE_SUMMARY.
+      - name: Stop the producer
+        run: |
+          docker compose --profile live stop ingest-live
+          docker compose --profile live logs --no-log-prefix ingest-live | grep "LIVE_SUMMARY"
+
+      - name: Wait until the processor has written everything
+        run: |
+          count() {
+            docker compose --profile live exec -T mongodb mongosh --quiet --eval \
+              'db.getSiblingDB("sentiment").live_predictions.countDocuments()'
+          }
+          last=-1
+          for _ in $(seq 30); do
+            now=$(count)
+            echo "live_predictions: $now"
+            if [ "$now" = "$last" ]; then
+              exit 0
+            fi
+            last=$now
+            sleep 20
+          done
+          echo "MongoDB was still growing after 10 minutes"
+          exit 1
+
+      - name: Run report
+        run: python -m scripts.live_report --warmup-minutes 5
+
+      - name: Sample for labeling
+        run: python -m scripts.sample_for_labeling --n 200 --seed 42 --output "$RUNNER_TEMP/label-sample/label_sample.csv"
+
+      - name: Upload the run report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-report
+          path: |
+            reports/live_run.json
+            reports/live_snapshot/
+          if-no-files-found: warn
+          retention-days: 30
+
+      # Post text (handles masked): kept for 3 days only.
+      - name: Upload the labeling sample
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: label-sample
+          path: ${{ runner.temp }}/label-sample/label_sample.csv
+          if-no-files-found: warn
+          retention-days: 3
+
+      - name: Show the containers on failure
+        if: failure()
+        run: docker compose --profile live ps -a
+
+      - name: Stop and remove everything
+        if: always()
+        run: docker compose --profile live down -v
