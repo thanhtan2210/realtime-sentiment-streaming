@@ -48,6 +48,24 @@ stream:
     # this, delete the checkpoint volume (`docker compose down -v`).
     shuffle_partitions: 2                # env: SPARK_SHUFFLE_PARTITIONS
 
+# Live mode (docker compose --profile live): English Bluesky posts as they are
+# written, through the same pipeline as replay but with its own Kafka topic,
+# MongoDB collections and checkpoints. The environment variables listed for
+# `stream` override these keys too. Feeds, filters and keywords:
+# config/live_sources.yaml.
+live:
+  kafka:
+    bootstrap_servers: localhost:29092   # env: KAFKA_BOOTSTRAP_SERVERS
+    topic: posts_live                    # env: KAFKA_TOPIC
+  source:
+    # Jetstream time_us of the last post Kafka acknowledged; read on start-up.
+    cursor_path: state/bluesky_cursor.json   # env: LIVE_CURSOR_PATH
+    # Resume this far before the saved cursor, so nothing is skipped.
+    cursor_rewind_seconds: 5
+    cursor_save_seconds: 5
+    backoff_cap_seconds: 60
+    log_every_seconds: 60
+
 # Settings for the Streamlit dashboard (src.dashboard). SENTIMENT_SOURCE
 # (mongo, snapshot or auto) picks the data source at start-up.
 dashboard:

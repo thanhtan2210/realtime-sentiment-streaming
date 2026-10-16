@@ -1,9 +1,10 @@
-# Feasibility probe for a live data source (scripts/probe_bluesky.py).
-# Nothing in the pipeline, the producer or the dashboard reads this file.
+# Live data source: English posts on the public Bluesky Jetstream. Read by the
+# live producer (src/stream/sources/bluesky.py) and by the feasibility probe
+# (scripts/probe_bluesky.py); both use the same filters below.
 
 bluesky:
-  # Public Jetstream endpoints (no account needed); the probe moves to the next
-  # one when a connection fails.
+  # Public Jetstream endpoints (no account needed); the next one is tried when
+  # a connection fails.
   endpoints:
     - wss://jetstream2.us-east.bsky.network/subscribe?wantedCollections=app.bsky.feed.post
     - wss://jetstream1.us-east.bsky.network/subscribe?wantedCollections=app.bsky.feed.post
@@ -53,7 +54,9 @@ airline_strict:
     official_account: none found
 
 # Level 2: the post is about flying. Same matching rules. A post matching both
-# levels is tagged with its airline; otherwise with "unspecified".
+# levels is tagged with its airline; otherwise with "unspecified" in the probe.
+# The live producer gives every English post a topic: airline:<name> (level 1),
+# air_travel (level 2 only) or general (neither).
 air_travel:
   - flight delayed
   - flight was delayed

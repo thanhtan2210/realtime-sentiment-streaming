@@ -5,3 +5,4 @@ mlruns/
 checkpoints/
 .venv/
 .env
+state/
