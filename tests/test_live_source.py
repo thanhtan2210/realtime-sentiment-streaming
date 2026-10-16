@@ -380,3 +380,24 @@ def test_producer_options():
         parse_args(["--duration-minutes", "5"])  # replay has no duration
     with pytest.raises(SystemExit):
         parse_args(["--source", "bluesky", "--duration-minutes", "0"])
+
+
+def test_live_settings_are_separate_from_replay():
+    from src.ml.data import load_config
+    from src.stream.settings import mode_settings
+
+    cfg = load_config()
+    replay, live = mode_settings(cfg, "replay", env={}), mode_settings(cfg, "live", env={})
+    assert live["kafka"]["topic"] == "posts_live" != replay["kafka"]["topic"]
+    assert (live["mongodb"]["predictions_collection"], live["mongodb"]["windows_collection"]) == (
+        "live_predictions",
+        "live_windows",
+    )
+    assert (live["window"], live["watermark"]) == ("1 minute", "2 minutes")
+    assert live["checkpoint_dir"] != replay["checkpoint_dir"]
+    env = {"KAFKA_TOPIC": "other", "LIVE_CURSOR_PATH": "/state/c.json"}
+    overridden = mode_settings(cfg, "live", env=env)
+    assert overridden["kafka"]["topic"] == "other" and overridden["source"]["cursor_path"] == "/state/c.json"
+    assert "source" not in mode_settings(cfg, "replay", env=env)  # a live-only key is not added to replay
+    with pytest.raises(ValueError):
+        mode_settings(cfg, "nonsense", env={})

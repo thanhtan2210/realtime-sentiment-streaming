@@ -65,6 +65,21 @@ live:
     cursor_save_seconds: 5
     backoff_cap_seconds: 60
     log_every_seconds: 60
+  mongodb:
+    uri: mongodb://localhost:27017       # env: MONGODB_URI
+    database: sentiment                  # env: MONGODB_DATABASE
+    predictions_collection: live_predictions
+    windows_collection: live_windows
+  # Windows per topic (airline:<name>, air_travel, general) and one row "all".
+  # A post_id seen again within the watermark is written and counted once.
+  window: 1 minute                       # env: STREAM_WINDOW
+  watermark: 2 minutes                   # env: STREAM_WATERMARK
+  trigger: 5 seconds                     # env: STREAM_TRIGGER
+  checkpoint_dir: checkpoints/live       # env: STREAM_CHECKPOINT_DIR
+  spark:
+    master: local[2]                     # env: SPARK_MASTER
+    driver_memory: 1g                    # env: SPARK_DRIVER_MEMORY
+    shuffle_partitions: 2                # env: SPARK_SHUFFLE_PARTITIONS
 
 # Settings for the Streamlit dashboard (src.dashboard). SENTIMENT_SOURCE
 # (mongo, snapshot or auto) picks the data source at start-up.

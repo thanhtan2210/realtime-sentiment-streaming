@@ -1,12 +1,18 @@
 """Spark Structured Streaming job: Kafka -> sentiment model -> MongoDB.
 
 Usage (inside the Spark image, where the Kafka and MongoDB connectors are installed):
-    python -m src.stream.processor
+    python -m src.stream.processor                      # replay mode (the 2015 tweets)
+    PIPELINE_MODE=live python -m src.stream.processor   # live mode (Bluesky posts)
 
-Two queries read the same topic, each with its own checkpoint:
+The mode picks a section of config/pipeline.yaml (`stream` or `live`). In replay
+mode, two queries read the same topic, each with its own checkpoint:
   predictions      one document per tweet, `_id` = tweet_id
   airline_windows  label counts per airline and event-time window, `_id` = airline|window_start;
                    a tweet delivered twice within the watermark is counted once
+Live mode has the same two queries on its own topic, collections and checkpoints:
+  live_predictions one document per post, `_id` = post_id, written once per post_id
+  live_windows     label counts per topic and event-time window plus a row `all`,
+                   `_id` = topic|window_start
 
 Both sinks replace documents by `_id`, so replaying a batch does not create duplicates.
 The process exits with a non-zero code if the model file is missing, Kafka or
@@ -28,8 +34,13 @@ from pyspark.sql.streaming import StreamingQueryListener
 
 from src.common import config, logger as common_logger
 from src.ml.data import load_config
-from src.stream.settings import stream_settings
+from src.stream.settings import mode_settings
 from src.stream.transform import (
+    drop_repeated_posts,
+    live_prediction_documents,
+    live_window_counts,
+    live_window_documents,
+    parse_live_messages,
     parse_messages,
     prediction_documents,
     window_counts,
@@ -191,8 +202,78 @@ def start_queries(spark: SparkSession, settings: dict) -> list:
     ]
 
 
+def start_live_queries(spark: SparkSession, settings: dict) -> list:
+    """Live mode: the same two kinds of query, for Bluesky posts."""
+    kafka, mongodb = settings["kafka"], settings["mongodb"]
+    checkpoint_dir = os.path.join(config.BASE_DIR, settings["checkpoint_dir"])
+    predictions_name, windows_name = mongodb["predictions_collection"], mongodb["windows_collection"]
+    write_predictions = mongo_writer(mongodb, predictions_name)
+    write_windows = mongo_writer(mongodb, windows_name)
+
+    source = (
+        spark.readStream.format("kafka")
+        .option("kafka.bootstrap.servers", kafka["bootstrap_servers"])
+        .option("subscribe", kafka["topic"])
+        .option("startingOffsets", "earliest")
+        .load()
+    )
+    # Drop the posts re-read after a reconnect before the model sees them, so
+    # each post is written once and `written_at` is the time of its first write.
+    predictions = with_sentiment(drop_repeated_posts(parse_live_messages(source), settings["watermark"]))
+
+    def predictions_batch(batch_df, batch_id: int) -> None:
+        documents = live_prediction_documents(batch_df).persist()
+        started = time.monotonic()
+        rows = documents.count()
+        predicted = time.monotonic()
+        written_at = utc_now()
+        write_predictions(documents.withColumn("written_at", F.lit(written_at)))
+        written = time.monotonic()
+        documents.unpersist()
+        if rows:
+            timing = {
+                "sink": predictions_name,
+                "batchId": batch_id,
+                "rows": rows,
+                "writtenAt": written_at.isoformat(timespec="milliseconds"),
+                "readAndPredictMs": round((predicted - started) * 1000),
+                "mongoWriteMs": round((written - predicted) * 1000),
+            }
+            logger.info("WRITE " + json.dumps(timing))
+
+    def windows_batch(batch_df, batch_id: int) -> None:
+        documents = live_window_documents(batch_df).persist()
+        documents.count()
+        write_windows(documents.withColumn("updated_at", F.lit(utc_now())))
+        documents.unpersist()
+
+    trigger = settings["trigger"]
+    return [
+        predictions.writeStream.queryName(predictions_name)
+        .foreachBatch(predictions_batch)
+        .option("checkpointLocation", os.path.join(checkpoint_dir, predictions_name))
+        .trigger(processingTime=trigger)
+        .start(),
+        live_window_counts(predictions, settings["window"])
+        .writeStream.queryName(windows_name)
+        .outputMode("update")
+        .foreachBatch(windows_batch)
+        .option("checkpointLocation", os.path.join(checkpoint_dir, windows_name))
+        .trigger(processingTime=trigger)
+        .start(),
+    ]
+
+
+QUERIES = {"replay": start_queries, "live": start_live_queries}
+
+
 def main() -> int:
-    settings = stream_settings(load_config())
+    mode = os.environ.get("PIPELINE_MODE") or "replay"
+    try:
+        settings = mode_settings(load_config(), mode)
+    except ValueError as exc:
+        logger.error(str(exc))
+        return 1
     try:
         check_model()
         check_kafka(settings["kafka"])
@@ -211,11 +292,11 @@ def main() -> int:
         f"spark.sql.shuffle.partitions={spark.conf.get('spark.sql.shuffle.partitions')}"
     )
     logger.info(
-        f"Starting queries: trigger={settings['trigger']}, window={settings['window']}, "
-        f"watermark={settings['watermark']}"
+        f"Starting queries ({mode} mode): topic={settings['kafka']['topic']}, trigger={settings['trigger']}, "
+        f"window={settings['window']}, watermark={settings['watermark']}"
     )
     try:
-        start_queries(spark, settings)
+        QUERIES[mode](spark, settings)
         spark.streams.awaitAnyTermination()
     except Exception as exc:  # a failed query surfaces here as StreamingQueryException
         logger.error(f"Streaming query failed: {exc}")
