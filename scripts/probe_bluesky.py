@@ -20,6 +20,10 @@ It starts at once and needs only a network connection: it does not wait for a
 time of day and does not check what else runs on the machine (those checks
 belong to the benchmark, which this script does not touch).
 
+Run it on your own machine only. It prints post text to the screen, so it has
+no GitHub Actions workflow: the repository is public, and so are the logs and
+artifacts of its workflow runs.
+
 This is a probe. The pipeline, the producer and the dashboard do not use it.
 """
 import argparse

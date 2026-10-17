@@ -254,7 +254,7 @@ def test_the_review_sample_may_not_be_written_inside_the_repository(monkeypatch)
 
 
 def test_a_sample_path_outside_the_repository_is_accepted(monkeypatch, tmp_path):
-    """Like $RUNNER_TEMP on GitHub Actions: outside the checkout, so allowed."""
+    """A path outside the checkout is allowed."""
     calls = []
     monkeypatch.setattr("scripts.probe_bluesky.asyncio.run", lambda coro: calls.append(coro.close()) or {})
     monkeypatch.setattr("scripts.probe_bluesky.clock_offset", lambda server: None)
