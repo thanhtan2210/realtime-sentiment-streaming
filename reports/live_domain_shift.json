@@ -1,0 +1,107 @@
+{
+  "generated_at": "2026-10-17T09:50:15Z",
+  "commit": "1d55867f591c21678ab0a29e062777a07bc8e329",
+  "note": "Single annotator. Posts are a random sample of English Bluesky posts from one live run, labelled by hand without seeing the model's label.",
+  "labels_file_sha256": "aba95e7821d476f711a3e9e468eaea7367ee99f9b68fb98c74867bca2ddc373d",
+  "model_file": "models/sentiment_pipeline.joblib",
+  "rows": {
+    "rows": 200,
+    "skip": 31,
+    "empty": 0,
+    "scored": 169
+  },
+  "n": 169,
+  "hand_label_counts": {
+    "negative": 44,
+    "neutral": 60,
+    "positive": 65
+  },
+  "model_label_counts": {
+    "negative": 99,
+    "neutral": 39,
+    "positive": 31
+  },
+  "model": {
+    "accuracy": 0.5148,
+    "macro_f1": 0.5126,
+    "f1_per_class": {
+      "negative": 0.5315,
+      "neutral": 0.4646,
+      "positive": 0.5417
+    },
+    "confusion_matrix": [
+      [
+        38,
+        5,
+        1
+      ],
+      [
+        33,
+        23,
+        4
+      ],
+      [
+        28,
+        11,
+        26
+      ]
+    ],
+    "macro_f1_ci95": [
+      0.4395,
+      0.5898
+    ]
+  },
+  "baseline": {
+    "predicts": "positive",
+    "accuracy": 0.3846,
+    "macro_f1": 0.1852,
+    "f1_per_class": {
+      "negative": 0.0,
+      "neutral": 0.0,
+      "positive": 0.5556
+    },
+    "confusion_matrix": [
+      [
+        0,
+        0,
+        44
+      ],
+      [
+        0,
+        0,
+        60
+      ],
+      [
+        0,
+        0,
+        65
+      ]
+    ],
+    "macro_f1_ci95": [
+      0.1592,
+      0.2087
+    ]
+  },
+  "macro_f1_difference_vs_baseline": {
+    "value": 0.3274,
+    "ci95": [
+      0.2489,
+      0.4119
+    ]
+  },
+  "vs_2015_test_set": {
+    "source": "models/metrics.json (test.model)",
+    "macro_f1_2015": 0.7107,
+    "macro_f1_ci95_2015": [
+      0.6945,
+      0.7276
+    ],
+    "macro_f1_live_minus_2015": -0.1981,
+    "cis_overlap": false
+  },
+  "bootstrap": {
+    "method": "paired percentile",
+    "n_resamples": 1000,
+    "seed": 42
+  }
+}
