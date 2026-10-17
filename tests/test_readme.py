@@ -31,7 +31,9 @@ README = read("README.md")
 METRICS = load_json("models", "metrics.json")
 SNAPSHOT = load_json("reports", "stream_snapshot", "meta.json")
 CONSISTENCY = load_json("reports", "stream_consistency.json")
-NUMBER_SOURCES = [METRICS, SNAPSHOT, CONSISTENCY]
+LIVE_RUN = load_json("reports", "live_run.json")
+DOMAIN_SHIFT = load_json("reports", "live_domain_shift.json")
+NUMBER_SOURCES = [METRICS, SNAPSHOT, CONSISTENCY, LIVE_RUN, DOMAIN_SHIFT]
 
 # Reports that do not exist yet. Once the file is committed its numbers may appear in the README.
 OPTIONAL_SOURCES = [("reports", "benchmark.json")]
@@ -99,20 +101,23 @@ def test_sections_follow_the_agreed_order():
     assert re.findall(r"^## (.+)$", README, flags=re.MULTILINE) == SECTIONS
     lines = README.splitlines()
     assert lines[0].startswith("# ")
-    assert lines[2] == "Right now, are each airline's customers talking positively or negatively?"
+    assert lines[2] == (
+        "Label every incoming post as negative, neutral or positive and count them per time window: "
+        "accuracy is checked on replayed airline tweets, live behaviour on the Bluesky firehose."
+    )
 
 
-def test_the_only_todo_is_the_live_demo_link():
-    assert README.count("TODO") == 1
-    assert "TODO: link" in section("Live demo")
+def test_readme_has_no_todo():
+    assert "TODO" not in README
+    assert "Not deployed." in section("Live demo")
 
 
 def test_every_image_shown_exists():
     images = re.findall(r"!\[[^\]]*\]\(([^)]+)\)", README)
-    assert images == ["docs/images/dashboard.png", "docs/images/replay.gif"]
+    assert images == ["docs/images/dashboard.png", "docs/images/live.png", "docs/images/replay.gif"]
     for image in images:
         assert os.path.isfile(os.path.join(ROOT, image)), image
-    assert "docs/images/dashboard.png" in section("Live demo")
+    assert "docs/images/dashboard.png" in section("Live demo") and "docs/images/live.png" in section("Live demo")
     assert "docs/images/replay.gif" in section("How it works")
 
 
@@ -137,7 +142,14 @@ def test_no_unproven_marketing_words():
 def test_every_results_table_names_a_script_that_exists():
     results = section("Results")
     modules = re.findall(r"written by `python -m ([\w.]+)`", results)
-    assert modules == ["src.ml.train", "src.ml.train", "scripts.export_snapshot", "scripts.check_stream_consistency"]
+    assert modules == [
+        "src.ml.train",
+        "src.ml.train",
+        "scripts.export_snapshot",
+        "scripts.check_stream_consistency",
+        "scripts.live_report",
+        "scripts.eval_live_labels",
+    ]
     for module in modules:
         assert os.path.isfile(os.path.join(ROOT, *module.split(".")) + ".py"), module
     for path in re.findall(r"Source: `([^`]+)`", results):
@@ -268,6 +280,22 @@ def test_diagram_agrees_with_the_configuration():
     for node in ("Replay producer", "Kafka", "Spark Structured Streaming", "MongoDB", "Streamlit Cloud"):
         assert node in diagram
     assert stream["kafka"]["topic"] in read("docker-compose.yml")
+
+
+def test_diagram_has_the_live_branch_as_configured():
+    diagram = re.findall(r"```mermaid\n(.*?)```", README, flags=re.DOTALL)[0]
+    live = load_config()["live"]
+    compose = read("docker-compose.yml")
+    topic = live["kafka"]["topic"]
+    partitions = re.search(rf"--topic {topic} --partitions (\d+)", compose).group(1)
+    assert f"Kafka {topic}<br/>{partitions} partitions, key = post_id" in diagram
+    assert live["watermark"] == "2 minutes" and "2 min watermark" in diagram
+    assert live["window"] == "1 minute" and "1-minute windows" in diagram
+    assert f"{live['mongodb']['predictions_collection']}, {live['mongodb']['windows_collection']}" in diagram
+    assert "ingest-live:" in compose and "processor-live:" in compose
+    # the branch runs Jetstream -> ingest-live -> Kafka -> Spark live -> MongoDB -> the same dashboard
+    for edge in ('J["Bluesky Jetstream', '--> I["ingest-live', "I --> KL[", "KL --> SL[", "SL --> ML[", "ML --> D\n"):
+        assert edge in diagram, edge
 
 
 def test_tech_stack_has_at_most_six_entries_and_idempotency_is_explained():
@@ -497,3 +525,160 @@ def test_benchmark_limitation_matches_the_report(benchmark):
     # The README says the batches outlast the trigger; that has to be what was measured.
     assert median > trigger_seconds * 1000
     assert "says nothing about behaviour under concurrent load" in text
+
+
+# --- live run on Bluesky (reports/live_run.json, reports/live_domain_shift.json) -----------------
+
+
+def triple(values) -> str:
+    return " / ".join(str(v) for v in values)
+
+
+def test_live_run_table_matches_the_report():
+    text = section("Live run on Bluesky", level=3)
+    run, machine, posts = LIVE_RUN["run"], LIVE_RUN["machine"], LIVE_RUN["posts"]
+    assert machine["github_runner"] is True and (machine["nproc"], machine["ram_total_gb"]) == (4, 15.6)
+    assert text.startswith(
+        "Source: `reports/live_run.json`, written by `python -m scripts.live_report` in `.github/workflows/live-run.yml`."
+    )
+    assert os.path.isfile(os.path.join(ROOT, ".github", "workflows", "live-run.yml"))
+    assert (
+        f"Rate and latencies are over the {LIVE_RUN['rate']['after_warmup']['posts']:,} posts received after the "
+        f"{run['warmup_minutes']:.0f}-minute warm-up"
+    ) in text
+    started, stopped = pd.Timestamp(run["producer_started_at"]), pd.Timestamp(run["producer_stopped_at"])
+    rate, latency = LIVE_RUN["rate"]["after_warmup"], LIVE_RUN["latency_seconds"]
+    check, connection = LIVE_RUN["count_check"], LIVE_RUN["connection"]
+
+    def latencies(kind: str) -> str:
+        values = latency["after_warmup"][kind]
+        return " / ".join(seconds(values[p]) for p in ("median_s", "p95_s", "p99_s"))
+
+    assert tables(text)[0] == [
+        [
+            "Run",
+            f"{started:%Y-%m-%d %H:%M} to {stopped:%H:%M} UTC, {run['minutes']} minutes "
+            f"({run['warmup_minutes']:.0f} of warm-up), commit `{LIVE_RUN['commit'][:7]}`",
+        ],
+        [
+            "Machine",
+            f"one GitHub Actions runner, {machine['nproc']} vCPU, {machine['ram_total_gb']} GB RAM, {machine['cpu_model']}",
+        ],
+        [
+            "Posts received by the producer / sent to Kafka / read by Spark / written to MongoDB",
+            " / ".join(
+                f"{posts[k]:,}" for k in ("received_by_producer", "sent_to_kafka", "rows_read_from_kafka", "written")
+            ),
+        ],
+        ["Dropped as duplicate / as late", triple([posts["dropped_as_duplicate"], posts["dropped_as_late"]])],
+        [
+            "Count check: posts written = window totals of `all` = window totals of the topics",
+            f"{check['live_predictions']:,} = {check['windows_total_all_rows']:,} = {check['windows_total_topic_rows']:,} "
+            f"({check['windows']} windows): {'match' if check['match'] else 'mismatch'}",
+        ],
+        [
+            "Posts per second: mean / median by minute / p95 by minute",
+            triple([rate[k] for k in ("mean_posts_per_second", "median_posts_per_second_by_minute",
+                                      "p95_posts_per_second_by_minute")]),  # fmt: skip
+        ],
+        ["Source latency, `received_at − created_at`: p50 / p95 / p99", latencies("source")],
+        ["Pipeline latency, `written_at − received_at`: p50 / p95 / p99", latencies("pipeline")],
+        ["End-to-end latency, `written_at − created_at`: p50 / p95 / p99", latencies("end_to_end")],
+        [
+            "Reconnects / endpoint switches / failed connection attempts",
+            triple([connection[k] for k in ("reconnects", "endpoint_switches", "failed_connection_attempts")]),
+        ],
+    ]
+    definitions = latency["definitions"]
+    assert definitions == {
+        "source": "received_at - created_at",
+        "pipeline": "written_at - received_at",
+        "end_to_end": "written_at - created_at",
+    }
+    assert f"The containers' clock was {LIVE_RUN['clock']['offset_used_s']} s off by SNTP." in text
+
+
+def test_domain_shift_table_matches_the_report():
+    text = section("Live run on Bluesky", level=3)
+    shift, rows = DOMAIN_SHIFT, DOMAIN_SHIFT["rows"]
+    assert "Source: `reports/live_domain_shift.json`, written by `python -m scripts.eval_live_labels`." in text
+    assert "Single annotator" in shift["note"]
+    assert (
+        f"{rows['rows']} posts drawn at random from the run (after the warm-up) were labelled by one person without "
+        f"seeing the model's label; {rows['skip']} were marked skip, leaving {shift['n']}"
+    ) in text
+    assert rows["empty"] == 0 and rows["rows"] - rows["skip"] == shift["n"]
+    assert f"{shift['bootstrap']['n_resamples']:,} resamples" in text and shift["bootstrap"]["seed"] == 42
+
+    def labels(counts) -> str:
+        return " / ".join(f"{counts[label]:,}" for label in ("negative", "neutral", "positive"))
+
+    n = shift["n"]
+    baseline_counts = {label: (n if label == shift["baseline"]["predicts"] else 0) for label in ("negative", "neutral", "positive")}
+    reference = METRICS["test"]["model"]
+    assert shift["vs_2015_test_set"]["macro_f1_2015"] == reference["macro_f1"]
+    reference_counts = dict(zip(METRICS["test"]["labels"], (sum(col) for col in zip(*reference["confusion_matrix"]))))
+
+    def row(name: str, posts: int, result: dict, counts: dict) -> list[str]:
+        return [name, f"{posts:,}", score(result["accuracy"]), score_with_interval(result["macro_f1"], result["macro_f1_ci95"]),
+                labels(counts)]  # fmt: skip
+
+    assert tables(text)[1] == [
+        ["Hand labels (one annotator)", str(n), "", "", labels(shift["hand_label_counts"])],
+        row(f"Baseline: always \"{shift['baseline']['predicts']}\"", n, shift["baseline"], baseline_counts),
+        row("TF-IDF + logistic regression", n, shift["model"], shift["model_label_counts"]),
+        row("Same model on the 2015 test tweets", METRICS["split"]["test"]["rows"], reference, reference_counts),
+    ]
+    matrix = dict(zip(("negative", "neutral", "positive"), shift["model"]["confusion_matrix"]))
+    hand = shift["hand_label_counts"]
+    assert (
+        f"the model calls {shift['model_label_counts']['negative']} posts negative where the annotator saw "
+        f"{hand['negative']}: {matrix['neutral'][0]} of the {hand['neutral']} neutral posts and "
+        f"{matrix['positive'][0]} of the {hand['positive']} positive ones are labelled negative"
+    ) in text
+
+
+def test_live_line_of_the_summary_matches_the_reports():
+    summary = section("Problem → Approach → Results")
+    assert (
+        f"One {LIVE_RUN['run']['minutes']:.0f}-minute run read {LIVE_RUN['posts']['written']:,} English Bluesky posts "
+        f"through the same pipeline with a median pipeline latency of "
+        f"{seconds(LIVE_RUN['latency_seconds']['after_warmup']['pipeline']['median_s'])}"
+    ) in summary
+    assert (
+        f"On {DOMAIN_SHIFT['n']} hand-labelled posts the model's macro-F1 falls to {score(DOMAIN_SHIFT['model']['macro_f1'])}, "
+        f"against {score(DOMAIN_SHIFT['vs_2015_test_set']['macro_f1_2015'])} on the 2015 tweets"
+    ) in summary
+
+
+def test_live_limitations_agree_with_the_reports():
+    text = section("Limitations")
+    rows, hand, model = DOMAIN_SHIFT["rows"], DOMAIN_SHIFT["hand_label_counts"], DOMAIN_SHIFT["model_label_counts"]
+    assert f"of {rows['rows']} posts, {rows['skip']} were skipped and {DOMAIN_SHIFT['n']} scored" in text
+    assert "Agreement between annotators is not measured" in text
+    assert "(`langs`)" in text and "some of the skipped posts were not in English" in text
+    assert model["negative"] > hand["negative"]
+    assert f"({model['negative']} of {DOMAIN_SHIFT['n']}, against {hand['negative']} by the annotator)" in text
+    assert "the model's prediction, not the true share" in text
+
+    run = LIVE_RUN["run"]
+    started, stopped = pd.Timestamp(run["producer_started_at"]), pd.Timestamp(run["producer_stopped_at"])
+    eastern = lambda ts: ts.tz_convert("America/New_York")  # noqa: E731
+    assert (
+        f"one live run of {run['minutes']:.0f} minutes, from {started:%H:%M} to {stopped:%H:%M} UTC "
+        f"({eastern(started):%H:%M} to {eastern(stopped):%H:%M} US Eastern time)"
+    ) in text
+
+    topics = LIVE_RUN["topics"]
+    airline = sum(v["posts"] for k, v in topics.items() if k.startswith("airline:"))
+    assert (
+        f"{airline} of {LIVE_RUN['posts']['written']:,} posts named an airline and "
+        f"{topics['air_travel']['posts']} talked about flying"
+    ) in text
+    assert f"its p99 is {seconds(LIVE_RUN['latency_seconds']['after_warmup']['source']['p99_s'])}" in text
+    assert "Actions run 38922308228" in text and LIVE_RUN["count_check"]["match"] is True
+
+
+def test_license_section_says_live_posts_are_not_stored():
+    text = section("Authors and license")
+    assert "Live posts are not stored in the repository" in text
