@@ -3,6 +3,13 @@
 # of posts for manual labeling. Results are uploaded as artifacts only: this
 # workflow does not commit or push anything.
 #
+# The repository is public, so anyone signed in to GitHub can download its
+# artifacts. The labeling sample holds other people's post text, so it is
+# uploaded only encrypted with the repository secret LABEL_SAMPLE_PASSPHRASE
+# (openssl enc -aes-256-cbc -pbkdf2 -iter 600000); the run stops at once if the
+# secret is missing. Decrypt it with:
+#   openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -in label_sample.csv.enc -out label_sample.csv
+#
 # Start it by pushing a branch named live/<anything>, or from the Actions tab.
 name: Live run
 
@@ -27,6 +34,15 @@ jobs:
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
       RUN_MINUTES: 45
     steps:
+      - name: Check the labeling passphrase
+        env:
+          LABEL_SAMPLE_PASSPHRASE: ${{ secrets.LABEL_SAMPLE_PASSPHRASE }}
+        run: |
+          if [ -z "$LABEL_SAMPLE_PASSPHRASE" ]; then
+            echo "The repository secret LABEL_SAMPLE_PASSPHRASE is not set: the labeling sample cannot be encrypted"
+            exit 1
+          fi
+
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
@@ -80,15 +96,19 @@ jobs:
           docker compose --profile live logs --no-log-prefix ingest-live | grep "LIVE_SUMMARY"
 
       - name: Wait until the processor has written everything
+        id: written
         run: |
-          count() {
-            docker compose --profile live exec -T mongodb mongosh --quiet --eval \
-              'db.getSiblingDB("sentiment").live_predictions.countDocuments()'
+          # posts in live_predictions, and posts counted in the `all` rows of live_windows
+          totals() {
+            docker compose --profile live exec -T mongodb mongosh --quiet --eval '
+              const db_ = db.getSiblingDB("sentiment");
+              const all = db_.live_windows.aggregate([{$match: {topic: "all"}}, {$group: {_id: null, n: {$sum: "$total"}}}]).toArray();
+              print(db_.live_predictions.countDocuments() + " " + (all.length ? all[0].n : 0));'
           }
-          last=-1
+          last=""
           for _ in $(seq 30); do
-            now=$(count)
-            echo "live_predictions: $now"
+            now=$(totals)
+            echo "live_predictions, live_windows(all): $now"
             if [ "$now" = "$last" ]; then
               exit 0
             fi
@@ -99,10 +119,26 @@ jobs:
           exit 1
 
       - name: Run report
-        run: python -m scripts.live_report --warmup-minutes 5
+        run: |
+          status=0
+          python -m scripts.live_report --warmup-minutes 5 || status=$?
+          # aggregates only, no post text: readable here without downloading the artifact
+          cat reports/live_run.json || true
+          exit $status
 
+      # The sample does not depend on the report's count check, so it is drawn
+      # whenever MongoDB holds the whole run.
       - name: Sample for labeling
-        run: python -m scripts.sample_for_labeling --n 200 --seed 42 --output "$RUNNER_TEMP/label-sample/label_sample.csv"
+        if: ${{ !cancelled() && steps.written.outcome == 'success' }}
+        env:
+          LABEL_SAMPLE_PASSPHRASE: ${{ secrets.LABEL_SAMPLE_PASSPHRASE }}
+        run: |
+          plain="$RUNNER_TEMP/label-sample-plain/label_sample.csv"
+          python -m scripts.sample_for_labeling --n 200 --seed 42 --output "$plain"
+          mkdir -p "$RUNNER_TEMP/label-sample"
+          openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt -pass env:LABEL_SAMPLE_PASSPHRASE \
+            -in "$plain" -out "$RUNNER_TEMP/label-sample/label_sample.csv.enc"
+          rm -rf "$RUNNER_TEMP/label-sample-plain"
 
       - name: Upload the run report
         if: always()
@@ -115,13 +151,13 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-      # Post text (handles masked): kept for 3 days only.
+      # Post text (handles masked), encrypted; kept for 3 days only.
       - name: Upload the labeling sample
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: label-sample
-          path: ${{ runner.temp }}/label-sample/label_sample.csv
+          path: ${{ runner.temp }}/label-sample/label_sample.csv.enc
           if-no-files-found: warn
           retention-days: 3
 
