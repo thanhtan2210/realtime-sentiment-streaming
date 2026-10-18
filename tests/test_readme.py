@@ -33,7 +33,9 @@ SNAPSHOT = load_json("reports", "stream_snapshot", "meta.json")
 CONSISTENCY = load_json("reports", "stream_consistency.json")
 LIVE_RUN = load_json("reports", "live_run.json")
 DOMAIN_SHIFT = load_json("reports", "live_domain_shift.json")
-NUMBER_SOURCES = [METRICS, SNAPSHOT, CONSISTENCY, LIVE_RUN, DOMAIN_SHIFT]
+# An earlier live run whose count check failed; only its Limitations line uses it.
+MISMATCH_RUN = load_json("reports", "live_run_2026-10-16_mismatch.json")
+NUMBER_SOURCES = [METRICS, SNAPSHOT, CONSISTENCY, LIVE_RUN, DOMAIN_SHIFT, MISMATCH_RUN]
 
 # Reports that do not exist yet. Once the file is committed its numbers may appear in the README.
 OPTIONAL_SOURCES = [("reports", "benchmark.json")]
@@ -682,3 +684,36 @@ def test_live_limitations_agree_with_the_reports():
 def test_license_section_says_live_posts_are_not_stored():
     text = section("Authors and license")
     assert "Live posts are not stored in the repository" in text
+
+
+def test_mismatched_earlier_run_is_described_from_its_report():
+    run, posts, check = MISMATCH_RUN, MISMATCH_RUN["posts"], MISMATCH_RUN["count_check"]
+    assert run["generated_at"].startswith("2026-10-16") and run["commit"].startswith("1d55867")
+    assert check["match"] is False and posts["written_equals_read_minus_dropped"] is False
+    blob = json.dumps(run)
+    assert "did:" not in blob and "bsky.app" not in blob and '"text"' not in blob
+
+    # what the line claims about the report
+    kept = posts["rows_read_from_kafka"] - posts["dropped_as_duplicate"] - posts["dropped_as_late"]
+    assert posts["sent_to_kafka"] == posts["rows_read_from_kafka"]  # nothing lost between producer and Spark
+    assert check["windows_total_all_rows"] == check["windows_total_topic_rows"] == kept  # the windows agree
+    assert check["live_predictions"] == posts["written"] < kept  # the predictions are short
+    assert check["windows_where_all_differs_from_topics"] == 0
+
+    line = next(line for line in section("Limitations").splitlines() if "38922308228" in line)
+    assert (
+        f"(Actions run 38922308228, {run['generated_at'][:10]}) failed its count check; its report is "
+        "`reports/live_run_2026-10-16_mismatch.json`"
+    ) in line
+    assert (
+        f"The producer sent {posts['sent_to_kafka']:,} posts and Spark read {posts['rows_read_from_kafka']:,}; "
+        f"{posts['dropped_as_duplicate']} was dropped as a duplicate and {posts['dropped_as_late']} as late, "
+        f"leaving {kept:,}."
+    ) in line
+    assert (
+        f"({check['windows_total_all_rows']:,} in the `all` rows, {check['windows_total_topic_rows']:,} across the "
+        f"topics), but `live_predictions` holds {check['live_predictions']:,} posts: "
+        f"{kept - check['live_predictions']} posts are counted in the windows and missing from the predictions"
+    ) in line
+    assert "The cause was not found." in line
+    assert os.path.isfile(os.path.join(ROOT, "reports", "live_run_2026-10-16_mismatch.json"))

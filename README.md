@@ -210,7 +210,7 @@ The first two commands start Kafka, MongoDB, the Spark job and the dashboard, th
 - There is one live run of 45 minutes, from 05:57 to 06:42 UTC (01:57 to 02:42 US Eastern time). The post rate depends on the time of day.
 - Posts about flying are rare on Bluesky: in the run, 1 of 31,575 posts named an airline and 3 talked about flying. So the live mode does not follow each airline.
 - Source latency starts at `createdAt`, which the poster's app sets; a wrong device clock or a post published late shows up in it, which is why its p99 is 54.039 s.
-- An earlier live run (Actions run 38922308228) failed its count check: MongoDB held 3 posts fewer than the producer had sent. The cause was not found. The run reported here passed it.
+- An earlier live run (Actions run 38922308228, 2026-10-16) failed its count check; its report is `reports/live_run_2026-10-16_mismatch.json`. The producer sent 82,529 posts and Spark read 82,529; 1 was dropped as a duplicate and 0 as late, leaving 82,528. The window totals agree with that (82,528 in the `all` rows, 82,528 across the topics), but `live_predictions` holds 82,526 posts: 2 posts are counted in the windows and missing from the predictions. The cause was not found. The run reported above passed the same check.
 
 ## Authors and license
 

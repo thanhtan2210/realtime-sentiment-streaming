@@ -1,0 +1,163 @@
+{
+  "generated_at": "2026-10-16T16:02:34Z",
+  "commit": "1d55867f591c21678ab0a29e062777a07bc8e329",
+  "machine": {
+    "nproc": 4,
+    "ram_total_gb": 15.6,
+    "ram_available_at_start_gb": 12.1,
+    "cpu_model": "AMD EPYC 9V45 96-Core Processor",
+    "os": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+    "inside_container": false,
+    "github_runner": true,
+    "github_runner_image": "ubuntu24"
+  },
+  "clock": {
+    "offset_used_s": 0.003,
+    "offset_source": "SNTP from the ingest-live container, start and end",
+    "producer_offsets_s": [
+      0.001,
+      0.004
+    ]
+  },
+  "run": {
+    "producer_started_at": "2026-10-16T15:16:38.000+00:00",
+    "producer_stopped_at": "2026-10-16T16:01:51.961+00:00",
+    "first_post_received_at": "2026-10-16T15:16:38+00:00",
+    "last_post_received_at": "2026-10-16T16:01:51+00:00",
+    "minutes": 45.23,
+    "warmup_minutes": 5.0,
+    "measured_minutes": 40.23
+  },
+  "posts": {
+    "received_by_producer": 82529,
+    "sent_to_kafka": 82529,
+    "failed_kafka_sends": 0,
+    "batches_with_input": 544,
+    "rows_read_from_kafka": 82529,
+    "dropped_as_duplicate": 1,
+    "dropped_as_late": 0,
+    "written": 82526,
+    "written_equals_read_minus_dropped": false
+  },
+  "rate": {
+    "warmup": {
+      "seconds": 300.0,
+      "posts": 8940,
+      "mean_posts_per_second": 29.8,
+      "full_minutes": 5,
+      "median_posts_per_second_by_minute": 29.55,
+      "p95_posts_per_second_by_minute": 30.663
+    },
+    "after_warmup": {
+      "seconds": 2413.5,
+      "posts": 73586,
+      "mean_posts_per_second": 30.489,
+      "full_minutes": 40,
+      "median_posts_per_second_by_minute": 30.092,
+      "p95_posts_per_second_by_minute": 32.062
+    }
+  },
+  "latency_seconds": {
+    "definitions": {
+      "source": "received_at - created_at",
+      "pipeline": "written_at - received_at",
+      "end_to_end": "written_at - created_at"
+    },
+    "warmup": {
+      "source": {
+        "n": 8940,
+        "median_s": 0.81,
+        "p95_s": 6.881,
+        "p99_s": 34.424
+      },
+      "pipeline": {
+        "n": 8940,
+        "median_s": 3.126,
+        "p95_s": 5.406,
+        "p99_s": 5.752
+      },
+      "end_to_end": {
+        "n": 8940,
+        "median_s": 4.289,
+        "p95_s": 10.263,
+        "p99_s": 36.445
+      }
+    },
+    "after_warmup": {
+      "source": {
+        "n": 73586,
+        "median_s": 0.817,
+        "p95_s": 6.753,
+        "p99_s": 37.554
+      },
+      "pipeline": {
+        "n": 73586,
+        "median_s": 3.09,
+        "p95_s": 5.317,
+        "p99_s": 5.595
+      },
+      "end_to_end": {
+        "n": 73586,
+        "median_s": 4.266,
+        "p95_s": 10.194,
+        "p99_s": 40.802
+      }
+    },
+    "posts_without_created_at": 0
+  },
+  "connection": {
+    "connections": 1,
+    "reconnects": 0,
+    "dropped_connections": 0,
+    "failed_connection_attempts": 0,
+    "endpoint_switches": 0,
+    "switches": [],
+    "stopped_by": [
+      "signal"
+    ]
+  },
+  "count_check": {
+    "live_predictions": 82526,
+    "windows_total_all_rows": 82528,
+    "windows_total_topic_rows": 82528,
+    "windows": 46,
+    "windows_where_all_differs_from_topics": 0,
+    "label_counts_add_up": true,
+    "match": false
+  },
+  "topics": {
+    "general": {
+      "posts": 82511,
+      "share": 0.99982
+    },
+    "air_travel": {
+      "posts": 12,
+      "share": 0.00015
+    },
+    "airline:JetBlue": {
+      "posts": 2,
+      "share": 2e-05
+    },
+    "airline:American": {
+      "posts": 1,
+      "share": 1e-05
+    }
+  },
+  "model_labels": {
+    "note": "model trained on 2015 airline tweets, not validated on this data",
+    "counts": {
+      "negative": {
+        "posts": 47037,
+        "share": 0.56997
+      },
+      "neutral": {
+        "posts": 24007,
+        "share": 0.2909
+      },
+      "positive": {
+        "posts": 11482,
+        "share": 0.13913
+      }
+    }
+  }
+}
