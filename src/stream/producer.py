@@ -1,11 +1,12 @@
-"""Replay the test-set tweets into Kafka.
+"""Send posts into Kafka: the replayed test tweets, or live English Bluesky posts.
 
 Usage (from the repo root, with the stack running):
-    python -m src.stream.producer --speedup 600      # 600x faster than real time
+    python -m src.stream.producer --speedup 600      # replay, 600x faster than real time
     python -m src.stream.producer --max-rate --limit 500
+    python -m src.stream.producer --source bluesky [--duration-minutes 15]   # live
 
-Only the test split is replayed: the model never saw these tweets. Labels are
-not sent.
+Replay sends only the test split (the model never saw these tweets) and no
+labels. Live mode is in src/stream/sources/bluesky.py.
 """
 import argparse
 import sys
@@ -19,7 +20,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationErro
 
 from src.common import logger as common_logger
 from src.ml.data import load_config, load_raw, prepare
-from src.stream.settings import stream_settings
+from src.stream.settings import mode_settings, stream_settings
 
 logger = common_logger.get_logger(__name__)
 
@@ -110,7 +111,19 @@ def replay(
 
 
 def parse_args(argv=None):
-    parser = argparse.ArgumentParser(description="Replay the test-set tweets into Kafka.")
+    parser = argparse.ArgumentParser(description="Send replayed or live posts into Kafka.")
+    parser.add_argument(
+        "--source",
+        choices=["replay", "bluesky"],
+        default="replay",
+        help="replay: the labelled 2015 test tweets (default); bluesky: live English posts",
+    )
+    parser.add_argument(
+        "--duration-minutes",
+        type=float,
+        default=None,
+        help="bluesky only: stop cleanly after this long (flush, then save the cursor)",
+    )
     pace = parser.add_mutually_exclusive_group()
     pace.add_argument(
         "--speedup",
@@ -138,12 +151,20 @@ def parse_args(argv=None):
     args = parser.parse_args(argv)
     if args.speedup <= 0:
         parser.error("--speedup must be positive")
+    if args.duration_minutes is not None and args.source != "bluesky":
+        parser.error("--duration-minutes only applies to --source bluesky")
+    if args.duration_minutes is not None and args.duration_minutes <= 0:
+        parser.error("--duration-minutes must be positive")
     return args
 
 
 def main(argv=None) -> int:
     args = parse_args(argv)
     cfg = load_config()
+    if args.source == "bluesky":
+        from src.stream.sources import bluesky
+
+        return bluesky.main(args.duration_minutes, mode_settings(cfg, "live"))
     kafka = stream_settings(cfg)["kafka"]
     tweets = select_test_tweets(load_raw(), cfg, args.limit)
     speedup = None if args.max_rate else args.speedup

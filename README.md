@@ -1,14 +1,14 @@
-# Airline tweet sentiment stream
+# Sentiment stream: replayed airline tweets and live Bluesky posts
 
-Right now, are each airline's customers talking positively or negatively?
+Label every incoming post as negative, neutral or positive and count them per time window: accuracy is checked on replayed airline tweets, live behaviour on the Bluesky firehose.
 
 ## Live demo
 
-TODO: link
+Not deployed. Screenshots of the dashboard's two tabs, both showing recorded runs:
 
-The demo replays a recorded run of the pipeline; it is not live Twitter data.
+![The replay tab: airline tweets from a recorded run](docs/images/dashboard.png)
 
-![The dashboard replaying a recorded run](docs/images/dashboard.png)
+![The live tab: the recorded 45-minute Bluesky run](docs/images/live.png)
 
 ## Problem → Approach → Results
 
@@ -19,6 +19,7 @@ The demo replays a recorded run of the pipeline; it is not live Twitter data.
 - **Stream.** One recorded replay sent 4,196 tweets and produced 4,196 predictions and 198 airline-hour windows; the watermark dropped 0 rows.
 - **Consistency.** Stream predictions match the offline model on 4,196 of 4,196 tweets.
 - **Speed.** In a burst test the stack handled 1264.6 tweets per second with a median latency of 6.076 s from send to `written_at`, on a GitHub Actions runner (2 vCPU, 7.8 GB RAM); see [Benchmark](#benchmark).
+- **Live.** One 45-minute run read 31,575 English Bluesky posts through the same pipeline with a median pipeline latency of 3.442 s. On 169 hand-labelled posts the model's macro-F1 falls to 0.5126, against 0.7107 on the 2015 tweets; see [Live run on Bluesky](#live-run-on-bluesky).
 
 ## Results
 
@@ -110,6 +111,40 @@ Only 3 micro-batches carried the load, so each p95 is close to the slowest batch
 
 The median `pandas_udf` run took 10.64 times less time than the median `udf` run.
 
+### Live run on Bluesky
+
+Source: `reports/live_run.json`, written by `python -m scripts.live_report` in `.github/workflows/live-run.yml`.
+
+English posts from the public Bluesky Jetstream went through the live profile of the same stack (own topic, collections and checkpoints). Rate and latencies are over the 27,663 posts received after the 5-minute warm-up.
+
+| | |
+| --- | --- |
+| Run | 2026-10-17 05:57 to 06:42 UTC, 45.23 minutes (5 of warm-up), commit `1d55867` |
+| Machine | one GitHub Actions runner, 4 vCPU, 15.6 GB RAM, AMD EPYC 9V74 80-Core Processor |
+| Posts received by the producer / sent to Kafka / read by Spark / written to MongoDB | 31,575 / 31,575 / 31,575 / 31,575 |
+| Dropped as duplicate / as late | 0 / 0 |
+| Count check: posts written = window totals of `all` = window totals of the topics | 31,575 = 31,575 = 31,575 (46 windows): match |
+| Posts per second: mean / median by minute / p95 by minute | 11.46 / 11.433 / 12.66 |
+| Source latency, `received_at − created_at`: p50 / p95 / p99 | 1.098 s / 9.813 s / 54.039 s |
+| Pipeline latency, `written_at − received_at`: p50 / p95 / p99 | 3.442 s / 5.651 s / 6.009 s |
+| End-to-end latency, `written_at − created_at`: p50 / p95 / p99 | 4.915 s / 13.339 s / 57.211 s |
+| Reconnects / endpoint switches / failed connection attempts | 0 / 0 / 0 |
+
+`created_at` is the post's own `createdAt`, set by the poster's app; `received_at` is when the producer read it from Jetstream; `written_at` is stamped by Spark just before the MongoDB write. The containers' clock was 0.002 s off by SNTP.
+
+Source: `reports/live_domain_shift.json`, written by `python -m scripts.eval_live_labels`.
+
+The model was not retrained. 200 posts drawn at random from the run (after the warm-up) were labelled by one person without seeing the model's label; 31 were marked skip, leaving 169. Intervals are 95% paired-bootstrap intervals from 1,000 resamples.
+
+| | Posts | Accuracy | Macro-F1 [95% CI] | Labels: negative / neutral / positive |
+| --- | --- | --- | --- | --- |
+| Hand labels (one annotator) | 169 | | | 44 / 60 / 65 |
+| Baseline: always "positive" | 169 | 0.3846 | 0.1852 [0.1592, 0.2087] | 0 / 0 / 169 |
+| TF-IDF + logistic regression | 169 | 0.5148 | 0.5126 [0.4395, 0.5898] | 99 / 39 / 31 |
+| Same model on the 2015 test tweets | 4,196 | 0.7691 | 0.7107 [0.6945, 0.7276] | 2,572 / 953 / 671 |
+
+On Bluesky the model calls 99 posts negative where the annotator saw 44: 33 of the 60 neutral posts and 28 of the 65 positive ones are labelled negative.
+
 ## How it works
 
 ```mermaid
@@ -117,14 +152,21 @@ flowchart LR
     P["Replay producer<br/>test-set tweets"] --> K["Kafka<br/>3 partitions, key = tweet_id"]
     K --> S["Spark Structured Streaming<br/>pandas_udf model, 30 min watermark,<br/>dedupe, 1-hour windows"]
     S --> M[("MongoDB<br/>predictions, airline_windows")]
-    M --> D["Streamlit<br/>live dashboard"]
+    M --> D["Streamlit<br/>dashboard"]
     M -.-> N["Snapshot<br/>reports/stream_snapshot"]
-    N --> C["Streamlit Cloud<br/>replay of the snapshot"]
+    N --> C["Streamlit Cloud<br/>recorded runs"]
+    J["Bluesky Jetstream<br/>English posts"] --> I["ingest-live<br/>post_id = sha256 of the post URI"]
+    I --> KL["Kafka posts_live<br/>3 partitions, key = post_id"]
+    KL --> SL["Spark live<br/>same model, 2 min watermark,<br/>dedupe, 1-minute windows"]
+    SL --> ML[("MongoDB<br/>live_predictions, live_windows")]
+    ML --> D
+    ML -.-> R["Recorded run<br/>reports/live_run.json, live_snapshot"]
+    R --> C
 ```
 
 ![The dashboard while a replay is playing](docs/images/replay.gif)
 
-The dashboard has two modes and always says which one it is in: live from MongoDB when the stack is running, or a replay of the recorded run in `reports/stream_snapshot/` with a simulated clock, which is what the hosted demo shows.
+The dashboard has one tab per mode, and each tab says where its data comes from. The replay tab reads MongoDB when the stack is running, or replays the recorded run in `reports/stream_snapshot/` with a simulated clock. The live tab reads MongoDB while the live profile runs, or the recorded Bluesky run in `reports/live_run.json` and `reports/live_snapshot/`; it shows counts, rates and latencies, never a post's text.
 
 Tech stack:
 
@@ -135,7 +177,7 @@ Tech stack:
 - Streamlit
 - Docker Compose
 
-**Running a batch twice does not change the result.** Each prediction is stored under `_id = tweet_id` and each window under `_id = airline|window_start`, and both sinks replace the document with that id, so a re-run of a micro-batch overwrites instead of adding. A tweet delivered twice is still counted once in its window, because the window query calls `dropDuplicatesWithinWatermark` on `tweet_id` before it aggregates.
+**Running a batch twice does not change the result.** Each prediction is stored under `_id = tweet_id` and each window under `_id = airline|window_start`, and both sinks replace the document with that id, so a re-run of a micro-batch overwrites instead of adding. A tweet delivered twice is still counted once in its window, because the window query calls `dropDuplicatesWithinWatermark` on `tweet_id` before it aggregates. Live mode does the same with `_id = post_id` and `_id = topic|window_start`, and drops a repeated `post_id` before the model, because after a reconnect the producer reads the last 5 seconds again.
 
 ## How to run
 
@@ -148,7 +190,7 @@ docker compose run --rm producer --speedup 600
 pytest -q
 ```
 
-The first two commands start Kafka, MongoDB, the Spark job and the dashboard, then replay the test tweets at 600 times real speed. `pytest -q` needs the packages in `requirements-dev.txt`; the Spark tests are skipped when no Java runtime is installed. Without Docker, `streamlit run app.py` replays the recorded run.
+The first two commands start Kafka, MongoDB, the Spark job and the dashboard, then replay the test tweets at 600 times real speed. `pytest -q` needs the packages in `requirements-dev.txt`; the Spark tests are skipped when no Java runtime is installed. Without Docker, `streamlit run app.py` shows the recorded runs. Live mode: `make live-up` starts Kafka, MongoDB, the Bluesky ingest and the live Spark job (`make live-down` stops it and deletes its data).
 
 ## Limitations
 
@@ -162,9 +204,17 @@ The first two commands start Kafka, MongoDB, the Spark job and the dashboard, th
 - The benchmark is a burst on a single 2-vCPU GitHub Actions runner with nothing else running. Its 3 micro-batches took a median of 6122.0 ms, longer than the 5-second trigger, so the latency it reports is mostly the time to work off a backlog. It is not the latency at a steady, slower rate, where the wait for the next trigger matters more and which this benchmark does not measure, and it says nothing about behaviour under concurrent load.
 - The dashboard only flags a window as above the threshold when it has at least 20 tweets. Only the airlines with many tweets reach 20 tweets in an hour, so the flag mostly applies to them.
 - The dataset is licensed CC BY-NC-SA 4.0: non-commercial use only, share-alike.
+- The live labels come from one annotator: of 200 posts, 31 were skipped and 169 scored. Agreement between annotators is not measured.
+- The English filter trusts the language the poster's app declares (`langs`); some of the skipped posts were not in English.
+- On Bluesky the model labels too many posts negative (99 of 169, against 44 by the annotator), so the negative share in the live tab is the model's prediction, not the true share.
+- There is one live run of 45 minutes, from 05:57 to 06:42 UTC (01:57 to 02:42 US Eastern time). The post rate depends on the time of day.
+- Posts about flying are rare on Bluesky: in the run, 1 of 31,575 posts named an airline and 3 talked about flying. So the live mode does not follow each airline.
+- Source latency starts at `createdAt`, which the poster's app sets; a wrong device clock or a post published late shows up in it, which is why its p99 is 54.039 s.
+- An earlier live run (Actions run 38922308228, 2026-10-16) failed its count check; its report is `reports/live_run_2026-10-16_mismatch.json`. The producer sent 82,529 posts and Spark read 82,529; 1 was dropped as a duplicate and 0 as late, leaving 82,528. The window totals agree with that (82,528 in the `all` rows, 82,528 across the topics), but `live_predictions` holds 82,526 posts: 2 posts are counted in the windows and missing from the predictions. The cause was not found. The run reported above passed the same check.
 
 ## Authors and license
 
 - Author: Phan Thanh Tan ([@thanhtan2210](https://github.com/thanhtan2210)).
 - Code: MIT, see [LICENSE](LICENSE).
+- Live posts are not stored in the repository: `reports/` holds only aggregate counts, rates and latencies, and the labelled sample was kept outside it.
 - Data: [Twitter US Airline Sentiment](https://www.kaggle.com/datasets/crowdflower/twitter-airline-sentiment) (Crowdflower / Figure Eight, "Data for Everyone"), CC BY-NC-SA 4.0. The download source, checksum and what the license covers are in [data/raw/SOURCE.md](data/raw/SOURCE.md). It also applies to `reports/stream_snapshot/` and to the screenshots in `docs/images/`, which contain or are derived from tweet text.

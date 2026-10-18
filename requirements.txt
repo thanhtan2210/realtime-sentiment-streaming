@@ -11,3 +11,5 @@ pymongo==4.18.3
 pydantic==2.13.5
 streamlit==1.45.1
 plotly==6.5.2
+# The live producer (src/stream/sources/bluesky.py) and scripts/probe_bluesky.py.
+websockets==17.2

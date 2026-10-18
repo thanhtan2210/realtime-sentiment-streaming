@@ -6,6 +6,12 @@
 #   docker compose down -v                            # stop and delete all data
 #
 # Memory limits add up to about 4 GB (plus 256 MB while the producer runs).
+#
+# Live mode (English Bluesky posts, profile `live`), on its own topic,
+# collections, checkpoints and cursor; `make live-up` starts only what it needs:
+#   docker compose --profile live up -d --build kafka mongodb ingest-live processor-live
+#   docker compose --profile live down -v
+# Memory limits for that set: about 3.6 GB.
 name: realtime-sentiment
 
 services:
@@ -140,7 +146,74 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     mem_limit: 256m
 
+  # --- live mode ---------------------------------------------------------------
+
+  # One-shot: create the live topic, then exit.
+  kafka-init-live:
+    profiles: ["live"]
+    image: apache/kafka:3.8.0
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_HEAP_OPTS: -Xmx128m
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - >
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092
+        --create --if-not-exists --topic posts_live --partitions 3 --replication-factor 1
+        && /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --describe --topic posts_live
+    restart: "no"
+    mem_limit: 256m
+
+  # Reads the Bluesky Jetstream and sends English posts to posts_live. The
+  # cursor (time of the last post Kafka acknowledged) lives in live-state, so a
+  # restart resumes where it stopped. `docker compose stop` lets it flush first.
+  ingest-live:
+    profiles: ["live"]
+    build:
+      context: .
+      dockerfile: docker/app.Dockerfile
+    image: realtime-sentiment-app
+    entrypoint: ["python", "-m", "src.stream.producer"]
+    command: ["--source", "bluesky"]
+    depends_on:
+      kafka-init-live:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      LIVE_CURSOR_PATH: /app/state/bluesky_cursor.json
+    volumes:
+      - live-state:/app/state
+    restart: on-failure
+    stop_grace_period: 30s
+    mem_limit: 256m
+
+  processor-live:
+    profiles: ["live"]
+    build:
+      context: .
+      dockerfile: docker/spark.Dockerfile
+    image: realtime-sentiment-spark
+    command: ["python", "-m", "src.stream.processor"]
+    depends_on:
+      kafka-init-live:
+        condition: service_completed_successfully
+      mongodb:
+        condition: service_healthy
+    environment:
+      PIPELINE_MODE: live
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      MONGODB_URI: mongodb://mongodb:27017
+      SPARK_MASTER: local[2]
+      SPARK_DRIVER_MEMORY: 1g
+    volumes:
+      - live-checkpoints:/app/checkpoints/live
+    mem_limit: 2048m
+
 volumes:
   kafka_data:
   mongo_data:
   checkpoints:
+  live-state:
+  live-checkpoints:

@@ -185,7 +185,9 @@ def test_replay_mode_says_it_is_a_replay(snapshot_dir):
     at = open_app(END_OF_HOUR_9)
     assert not at.exception
     banners = [banner.value for banner in at.info]
-    assert banners == ["Replay of a recorded run on 2026-01-02, not live Twitter data"]
+    # one banner per tab: the replay tab's, then the live tab's (the recorded Bluesky run)
+    recorded_run = data.recording_label(data.read_json(data.LIVE_REPORT_PATH))
+    assert banners == ["Replay of a recorded run on 2026-01-02, not live Twitter data", recorded_run]
     assert LIVE_BANNER not in banners
     assert [button.label for button in at.button] == ["Play", "Reset"]
 

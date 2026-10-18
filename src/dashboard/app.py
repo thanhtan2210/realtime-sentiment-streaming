@@ -1,10 +1,16 @@
-"""Streamlit dashboard: negative share per airline, live from MongoDB or replayed from a snapshot.
+"""Streamlit dashboard, one tab per mode of the pipeline.
 
 Run from the repo root with `streamlit run app.py`.
 
-SENTIMENT_SOURCE picks the data: `mongo`, `snapshot`, or `auto` (the default:
-MongoDB if it answers within 2 seconds, otherwise the snapshot). The page
-always says which one it is showing.
+Airline tweets (replay): negative share per airline, live from MongoDB or
+replayed from a snapshot. Bluesky live run: pipeline health, posts and the
+model's negative share per minute, and the topic counts, from the recorded
+run in reports/ or live from MongoDB; never the text of a live post.
+
+SENTIMENT_SOURCE picks the data: `mongo`, `snapshot` (the recorded run in the
+live tab), or `auto` (the default: MongoDB if it answers within 2 seconds,
+otherwise the snapshot; the live tab also needs live windows in MongoDB).
+Each tab always says which source it is showing.
 """
 import html
 import json
@@ -20,7 +26,7 @@ from pymongo import MongoClient
 from src.common import config
 from src.dashboard import data
 from src.ml.data import load_config
-from src.stream.settings import stream_settings
+from src.stream.settings import mode_settings, stream_settings
 
 LIVE_BANNER = "Live from MongoDB"
 REPLAY_BANNER = "Replay of a recorded run on {date}, not live Twitter data"
@@ -308,8 +314,193 @@ def about_the_model() -> None:
         st.caption(f"{MODEL_NOTE} Source: models/metrics.json, written by `python -m src.ml.train`.")
 
 
+# --- the Bluesky live run ---------------------------------------------------------------
+
+LIVE_MONGO_BANNER = "Live from MongoDB: live_windows and the times in live_predictions (no post text is read)"
+LIVE_MINUTES = 5  # the MongoDB source reports pipeline health over this many recent minutes
+POSTS_COLOR = SERIES_COLORS[0]
+NOT_IN_MONGO = "only in the producer's log, so only for the recorded run"
+
+
+@st.cache_data
+def cached_live_recording() -> tuple[dict, pd.DataFrame]:
+    return data.read_json(data.LIVE_REPORT_PATH), data.load_live_windows()
+
+
+@st.cache_data
+def cached_domain_shift() -> dict | None:
+    return data.read_json(data.DOMAIN_SHIFT_PATH)
+
+
+def count_text(value: int | None) -> str:
+    return "n/a" if value is None else f"{value:,}"
+
+
+def seconds_text(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.1f} s"
+
+
+def health_panel(health: data.LiveHealth) -> None:
+    st.subheader("Pipeline health")
+    when = f"Rate and latencies over {health.period}; post counts over the whole run."
+    if health.last_received is not None:
+        when += f" Last post received at {health.last_received:%Y-%m-%d %H:%M:%S} UTC."
+    st.caption(when)
+    check = health.count_check
+    first = st.columns(4)
+    first[0].metric("Posts received", count_text(health.received))
+    first[0].caption("Read by the producer" if health.received is not None else f"Posts received: {NOT_IN_MONGO}")
+    first[1].metric("Posts written", count_text(health.written))
+    first[1].caption("To MongoDB (live_predictions)")
+    first[2].metric("Posts per second", "n/a" if health.posts_per_second is None else f"{health.posts_per_second:.1f}")
+    first[3].metric("Count check", "match" if check["match"] else "mismatch")
+    first[3].caption(
+        f"{check['predictions']:,} posts written, {check['all']:,} in the `all` windows, "
+        f"{check['topics']:,} across the topics"
+    )
+    second = st.columns(4)
+    second[0].metric("Pipeline latency, median", seconds_text(health.pipeline_median_s))
+    second[0].caption(f"p95 {seconds_text(health.pipeline_p95_s)}. Producer to Kafka to Spark to MongoDB.")
+    second[1].metric("Source latency, median", seconds_text(health.source_median_s))
+    second[1].caption("From the post's createdAt, set by the poster's app, to the producer.")
+    second[2].metric("Reconnects", count_text(health.reconnects))
+    second[3].metric("Endpoint switches", count_text(health.endpoint_switches))
+    if health.reconnects is None:
+        second[2].caption(f"Reconnects and endpoint switches: {NOT_IN_MONGO}")
+
+
+def posts_per_minute_figure(minutes: pd.DataFrame) -> go.Figure:
+    figure = go.Figure(
+        go.Bar(
+            x=minutes["window_start"], y=minutes["total"], marker={"color": POSTS_COLOR},
+            name="Posts", hovertemplate="%{x|%H:%M} UTC: %{y:,} posts<extra></extra>",
+        )
+    )  # fmt: skip
+    figure.update_xaxes(title_text="Minute (UTC)")
+    figure.update_yaxes(title_text="Posts", rangemode="tozero")
+    figure.update_layout(margin={"l": 10, "r": 10, "t": 10, "b": 10}, height=320, bargap=0.15)
+    return figure
+
+
+def live_share_figure(minutes: pd.DataFrame) -> go.Figure:
+    figure = go.Figure(
+        go.Scatter(
+            x=minutes["window_start"], y=minutes["negative_share"], customdata=minutes[["total", "negative"]],
+            mode="lines+markers", line={"color": POSTS_COLOR, "width": 2}, marker={"color": POSTS_COLOR, "size": 8},
+            name="Predicted negative share",
+            hovertemplate="%{x|%H:%M} UTC: %{y:.0%} predicted negative (%{customdata[1]:,} of %{customdata[0]:,})"
+            "<extra></extra>",
+        )
+    )  # fmt: skip
+    figure.update_xaxes(title_text="Minute (UTC)")
+    figure.update_yaxes(title_text="Predicted negative share", range=[0, 1.05], tickformat=".0%")
+    figure.update_layout(margin={"l": 10, "r": 10, "t": 10, "b": 10}, height=320)
+    return figure
+
+
+def out_of_domain_text(shift: dict | None) -> str:
+    if shift is None:
+        return (
+            "**Out of domain.** The model was trained on 2015 airline tweets and has not been scored on "
+            "Bluesky posts. This line is the model's prediction, not a measured share."
+        )
+    s = data.domain_shift_summary(shift)
+    low, high = s["macro_f1_ci95"]
+    return (
+        f"**Out of domain.** The model was trained on 2015 airline tweets. On {s['n']} hand-labelled "
+        f"Bluesky posts its macro-F1 is {s['macro_f1']:.3f} (95% CI {low:.3f} to {high:.3f}), against "
+        f"{s['macro_f1_2015']:.3f} on the 2015 test tweets, and it labels more posts negative than the "
+        f"annotator did ({s['model_negative']} against {s['human_negative']}). This line is the model's "
+        "prediction, not the true share of negative posts. Source: reports/live_domain_shift.json, one annotator."
+    )
+
+
+def live_charts(windows: pd.DataFrame, still_running: bool) -> None:
+    minutes = data.per_minute(windows)
+    if minutes.empty:
+        st.write("No live windows yet.")
+        return
+    edge = "The current minute is still filling." if still_running else "The first and last minutes are partial."
+    posts_column, share_column = st.columns(2)
+    with posts_column:
+        st.subheader("Posts per minute, all topics")
+        st.plotly_chart(posts_per_minute_figure(minutes), use_container_width=True, key="live_posts_chart")
+        st.caption(f"1-minute event-time windows (the `all` row). {edge}")
+    with share_column:
+        st.subheader("Negative share per minute, predicted")
+        st.warning(out_of_domain_text(cached_domain_shift()))
+        st.plotly_chart(live_share_figure(minutes), use_container_width=True, key="live_share_chart")
+    with st.expander("Chart data as a table"):
+        st.dataframe(
+            pd.DataFrame(
+                {
+                    "Minute (UTC)": minutes["window_start"].dt.strftime("%Y-%m-%d %H:%M"),
+                    "Posts": minutes["total"],
+                    "Predicted negative": minutes["negative"],
+                    "Predicted negative share": minutes["negative_share"].map(percent),
+                }
+            ),
+            hide_index=True,
+            use_container_width=True,
+            key="live_minutes_table",
+        )
+
+
+def topics_table(windows: pd.DataFrame) -> None:
+    st.subheader("Topics")
+    counts = data.topic_counts(windows)
+    st.dataframe(
+        pd.DataFrame({"Topic": counts["topic"], "Posts": counts["posts"]}),
+        hide_index=True,
+        key="live_topics_table",
+    )
+    st.caption(
+        "general: neither of the others; air_travel: talks about flying; airline:<name>: names an airline "
+        "(config/live_sources.yaml). Counts only: these posts are too rare on Bluesky to chart."
+    )
+
+
+def render_live(health: data.LiveHealth, windows: pd.DataFrame, still_running: bool) -> None:
+    health_panel(health)
+    live_charts(windows, still_running)
+    topics_table(windows)
+
+
+def live_mongo_panel(mongodb_cfg: dict) -> None:
+    database = mongo_database(mongodb_cfg["uri"], mongodb_cfg["database"])
+    recent, written, windows, first = data.live_mongo_data(database, mongodb_cfg, LIVE_MINUTES)
+    render_live(data.recent_health(recent, written, windows, first, LIVE_MINUTES), windows, still_running=True)
+
+
+def live_recorded_panel() -> None:
+    run, windows = cached_live_recording()
+    render_live(data.recorded_health(run), windows, still_running=False)
+    st.caption(
+        "Source: reports/live_run.json and reports/live_snapshot/windows.parquet, written by "
+        "`python -m scripts.live_report` in .github/workflows/live-run.yml."
+    )
+
+
+def live_tab(live_mongodb: dict, refresh: int) -> None:
+    state = st.session_state
+    if "live_source" not in state:
+        state["live_source"] = data.choose_live_source(
+            os.environ.get("SENTIMENT_SOURCE", "auto"),
+            lambda: data.mongo_has_live_windows(
+                live_mongodb["uri"], live_mongodb["database"], live_mongodb["windows_collection"]
+            ),
+        )
+    if state["live_source"] == "mongo":
+        st.info(LIVE_MONGO_BANNER)
+        st.fragment(run_every=refresh)(live_mongo_panel)(live_mongodb)
+    else:
+        run, _ = cached_live_recording()
+        st.info(data.recording_label(run))
+        live_recorded_panel()
+
+
 def main() -> None:
-    st.set_page_config(page_title="Airline tweet sentiment", layout="wide")
+    st.set_page_config(page_title="Post sentiment stream", layout="wide")
     cfg = load_config()
     dashboard_cfg = cfg["dashboard"]
     settings = stream_settings(cfg)
@@ -317,8 +508,11 @@ def main() -> None:
     refresh = dashboard_cfg["refresh_seconds"]
     state = st.session_state
 
-    st.title("Airline tweet sentiment")
-    st.write("Right now, are each airline's customers talking positively or negatively?")
+    st.title("Post sentiment stream")
+    st.write(
+        "Every incoming post is labelled negative, neutral or positive and counted per time window: "
+        "accuracy is checked on replayed airline tweets, live behaviour on the Bluesky firehose."
+    )
 
     if "source" not in state:
         try:
@@ -329,17 +523,20 @@ def main() -> None:
             st.error(str(error))
             st.stop()
 
-    if state["source"] == "mongo":
-        st.info(LIVE_BANNER)
-        st.fragment(run_every=refresh)(live_panel)(settings["mongodb"], window, dashboard_cfg)
-    else:
-        snapshot = cached_snapshot(data.snapshot_dir(dashboard_cfg))
-        st.info(REPLAY_BANNER.format(date=snapshot.meta["recorded_at_utc"][:10]))
-        state.setdefault("clock", snapshot.predictions["created_at"].min() + window)
-        state.setdefault("playing", True)
-        state.setdefault("speed", dashboard_cfg["replay_speeds"][0])
-        state.setdefault("last_tick", time.monotonic())
-        timer = refresh if state["playing"] else None
-        st.fragment(run_every=timer)(replay_panel)(snapshot, window, dashboard_cfg)
-
-    about_the_model()
+    replay_tab, bluesky_tab = st.tabs(["Airline tweets (replay)", "Bluesky live run"])
+    with replay_tab:
+        if state["source"] == "mongo":
+            st.info(LIVE_BANNER)
+            st.fragment(run_every=refresh)(live_panel)(settings["mongodb"], window, dashboard_cfg)
+        else:
+            snapshot = cached_snapshot(data.snapshot_dir(dashboard_cfg))
+            st.info(REPLAY_BANNER.format(date=snapshot.meta["recorded_at_utc"][:10]))
+            state.setdefault("clock", snapshot.predictions["created_at"].min() + window)
+            state.setdefault("playing", True)
+            state.setdefault("speed", dashboard_cfg["replay_speeds"][0])
+            state.setdefault("last_tick", time.monotonic())
+            timer = refresh if state["playing"] else None
+            st.fragment(run_every=timer)(replay_panel)(snapshot, window, dashboard_cfg)
+        about_the_model()
+    with bluesky_tab:
+        live_tab(mode_settings(cfg, "live")["mongodb"], refresh)

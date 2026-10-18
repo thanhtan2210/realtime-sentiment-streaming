@@ -1,0 +1,87 @@
+# Live data source: English posts on the public Bluesky Jetstream. Read by the
+# live producer (src/stream/sources/bluesky.py) and by the feasibility probe
+# (scripts/probe_bluesky.py); both use the same filters below.
+
+bluesky:
+  # Public Jetstream endpoints (no account needed); the next one is tried when
+  # a connection fails.
+  endpoints:
+    - wss://jetstream2.us-east.bsky.network/subscribe?wantedCollections=app.bsky.feed.post
+    - wss://jetstream1.us-east.bsky.network/subscribe?wantedCollections=app.bsky.feed.post
+    - wss://jetstream1.us-west.bsky.network/subscribe?wantedCollections=app.bsky.feed.post
+    - wss://jetstream2.us-west.bsky.network/subscribe?wantedCollections=app.bsky.feed.post
+  # Posts whose `langs` contain this code (or a regional form such as en-US).
+  language: en
+  # A post whose own createdAt is further than this from Jetstream's time_us is counted.
+  created_at_tolerance_minutes: 5
+  # SNTP server used to measure this machine's clock offset at the start and end of a run.
+  time_server: time.windows.com
+  # Live producer: leave an endpoint whose median source lag (received_at minus
+  # the post's createdAt, per minute) stays above this for this many minutes in
+  # a row; after a switch, wait at least the cooldown before switching again.
+  source_lag_switch_seconds: 30
+  source_lag_switch_after_minutes: 2
+  endpoint_switch_cooldown_minutes: 5
+
+# Level 1: the post names an airline. Keywords are case-insensitive and matched
+# on whole words; "@handle" keywords also match "@handle.domain". A post also
+# counts when it mentions an official account in its facets (by DID).
+#
+# Official accounts, checked on 2026-10-14 with the public API
+# (app.bsky.actor.searchActors, app.bsky.actor.getProfile,
+# com.atproto.identity.resolveHandle). Accepted only when the handle is the
+# airline's own web domain, which Bluesky verifies, or the profile carries a
+# verification badge. No airline account had a badge.
+airline_strict:
+  United:
+    keywords: ["united airlines", "@united", "united flight"]
+    official_account: {handle: united.com, did: "did:plc:2ftfrpjqaivlsxnc37fzlfyk"}
+  American:
+    keywords: ["american airlines", "@americanair", "aa flight"]
+    # aa.com is not a Bluesky handle; americanair.bsky.social is neither the
+    # airline's domain nor verified.
+    official_account: none found
+  Delta:
+    keywords: ["delta air lines", "delta airlines", "@delta", "delta flight"]
+    # delta.com is not a Bluesky handle; deltaresponse.bsky.social is neither
+    # the airline's domain nor verified.
+    official_account: none found
+  Southwest:
+    keywords: ["southwest airlines", "@southwestair", "southwest flight"]
+    official_account: {handle: southwest.com, did: "did:plc:zsox2gbgymd7jh3qxvoly4u3"}
+  JetBlue:
+    keywords: ["jetblue"]
+    # jetblue.com is not a Bluesky handle; no account named JetBlue is the airline's.
+    official_account: none found
+  Alaska:
+    keywords: ["alaska airlines", "@alaskaair"]
+    # alaskaair.com is not a Bluesky handle; teamaag.bsky.social is neither
+    # the airline's domain nor verified.
+    official_account: none found
+
+# Level 2: the post is about flying. Same matching rules. A post matching both
+# levels is tagged with its airline; otherwise with "unspecified" in the probe.
+# The live producer gives every English post a topic: airline:<name> (level 1),
+# air_travel (level 2 only) or general (neither).
+air_travel:
+  - flight delayed
+  - flight was delayed
+  - delayed flight
+  - flight cancelled
+  - flight canceled
+  - cancelled my flight
+  - missed my flight
+  - missed connection
+  - lost luggage
+  - lost my luggage
+  - lost baggage
+  - checked bag
+  - baggage claim
+  - tsa line
+  - tsa precheck
+  - gate agent
+  - flight attendant
+  - boarding pass
+  - layover
+  - on the tarmac
+  - my flight
